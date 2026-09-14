@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "carin-compiler"
+version = "0.1.0"
+description = "Open source Python tool for reverse engineering and compiling Philips/VDO Carin map databases (BMW MK4, Renault, VDO Dayton)."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Flavio De Musso", email = "flaviodemusso@example.com" }
+]
+keywords = ["carin", "vdo", "bmw", "navigation", "mk4", "reverse-engineering", "compiler", "osm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "osmium>=3.6.0",
+    "shapely>=2.0.0",
+    "click>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "flake8>=6.0.0",
+]
+
+[project.scripts]
+carin-cli = "carin.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["carin"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
