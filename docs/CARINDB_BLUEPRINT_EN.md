@@ -566,6 +566,36 @@ PARCEL_S0_FMT = ">HBBHH"        # 8 bytes
 # A, FLAGS, B, C(name/aux ptr or 0), D(ptr to SECTION_1, stride 6)
 ```
 
+
+### 6.3.1 Type `0x0E` CF=1 Decoder & Semantics
+
+**Routing Architecture**: The routing engine (`rpmod`) and database query engine (`dbq`) ONLY request `BLOCK_TYPE` `0x0E` (parcels), `0x10` (street names), and `0x12` (root). They **never** read types `0x00`-`0x03` (which are handled strictly by `pbp` for map drawing) nor `0x04` (matrices). Thus, **the routing is NOT precalculated**: the firmware reconstructs the entire network hierarchy, valid paths, and turn costs at runtime starting from the base `0x0E` topology.
+
+**Layout**: 
+- **Prologue**: `T[0x2b]` (48 bytes).
+- **Bitstream Pre-header**: The compressed stream starts at byte 48. Before `bits_init` is called, it copies raw bytes:
+  - 1 byte (UNKNOWN)
+  - 1 byte (UNKNOWN)
+  - 2 bytes: Count $N$
+  - $N \times 12$ bytes: Array of raw 12-byte structs (Source for Section 2 geometries)
+  - 2 bytes: Count $M$
+  - $M \times 1$ bytes: Array of 1-byte elements
+- **Section 0** (Nodes/Segments, `T[0x2d]` = 8 bytes):
+  - `+0 (u16)` `A`: Internal pointer, `getbits(ptrbits)`. Pointer to Section 2 (the 12-byte array).
+  - `+2 (u8)` `FLAGS`: Digitization/One-way. `getbits(4)` for bits 0..3, and `getbits(1) << 4` for bit 4.
+  - `+3 (u8)` `B`: Hierarchy/Road Class. If `getbits(1)` is 1, `getbits(8)`, else inherit. (UNKNOWN exact mapping).
+  - `+4 (u16)` `C`: Aux pointer. If the same `getbits(1)` is 1, `getbits(ptrbits)`, else inherit.
+  - `+6 (u16)` `D`: Pointer to Section 1. `getbits(bits_needed(S1_count)) \times S1_{recsize} + S1_{offset}`.
+- **Section 1** (Edges/Attributes, `T[0x41]` = 6 bytes):
+  - `+0 (u16)`: Pointer to Section 2. `getbits(bits_needed(S2_count)) \times S2_{recsize} + S2_{offset}`.
+  - `+2 (u8)`: Count/Delta. If `getbits(1)` is 1, `getbits(bits_needed(S2_count)) + 2`. Else `1`.
+  - `+3 (u8)`: Flag. `getbits(1)`.
+  - (Bytes 4 and 5 are UNKNOWN/padding).
+- **Section 2** (Geometry/Border Nodes, `T[0x42]` = 24 bytes):
+  - Reconstructed by copying elements from the $N \times 12$ byte raw array in the bitstream pre-header. Exact layout UNKNOWN.
+
+*(Note: Coordinate delta decoding is still UNKNOWN and requires further analysis of the $12$-byte array).*
+
 ### 6.4 Type `0x04` (80,825 blocks) — 160-Entry Table
 
 ```
