@@ -71,5 +71,6 @@ venv.bak/
 dump/
 dataset/
 data/
-build/
-dataset/
+
+# scratch di sessione dell'agente
+.claude/

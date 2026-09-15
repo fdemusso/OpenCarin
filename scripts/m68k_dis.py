@@ -23,7 +23,7 @@ import capstone
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from os9_modules import Module, enumerate_modules  # noqa: E402
 
-FW = os.environ.get("CARIN_FW", "build/fw/_CC93__0560_nav_sw_load")
+FW = os.environ.get("CARIN_FW", "build/fw/CC93__0560_nav_sw_load")
 
 SHIFTY = {"lsl", "lsr", "asl", "asr", "rol", "ror", "roxl", "roxr", "btst", "bset",
           "bclr", "bchg", "swap"}

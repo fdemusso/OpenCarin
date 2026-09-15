@@ -4,6 +4,28 @@
 > Tutti i valori sono **Big-Endian**. Ogni affermazione in questo documento è stata verificata
 > sul dump; ciò che non è stato verificato è marcato `UNKNOWN` / `RESERVED`.
 
+---
+
+## ⚑ `COMPRESSION_FLAG = 1` — **RISOLTO** (2026-09-15)
+
+Il codec che copriva 96.011 blocchi (30 % del disco) e che era resistito a sei
+famiglie di algoritmi e oltre 650 varianti di parametri **non è un codec di
+compressione**. È **impacchettamento a bit guidato dalla struttura del blocco**:
+ogni sezione ha un decodificatore proprio che ricostruisce record a dimensione
+fissa leggendo campi di larghezza minima da un bitstream MSB-first, e converte
+indici di record in offset assoluti. Le dimensioni dei record arrivano dalla
+`RECORD_SIZE_TABLE` del superblock (§3.2), che finora sembrava inerte.
+
+Il decoder è stato trovato nel firmware originale del navigatore: modulo `pbp`
+della CARIN CC-93 (m68k/OS-9) e modulo `db_pub` di Mk3/RR (MIPS32/OS-9000).
+
+**Verifica**: 1200 blocchi `CF=1` di tipo `0x00` decodificati, 1200 con blob dei
+nomi leggibile e coerente con la bounding box del blocco — El Hierro, Algarve,
+Alentejo, con i rispettivi nomi di strada e codici stradali reali.
+
+→ **§9.11** per il formato completo, le primitive, i listati e gli strumenti.
+Implementazione in `carin/parser/cf1.py`.
+
 ## 0. Correzioni alle note di forum (`dataset/context.md`)
 
 | Affermazione forum | Verifica sul dump | Esito |
@@ -132,7 +154,7 @@ Quindi `payload_index = offset - 8`.
 | Valore | Codec | Blocchi | Verifica |
 |---:|---|---:|---|
 | `0` | nessuna compressione | 15.984 | payload usato as-is |
-| `1` | **UNKNOWN_CODEC** | 96.011 | codec proprietario, non identificato. Vedi §9 per tutto ciò che è stato escluso e misurato. Predominante nei tipi `0x00`,`0x15`,`0x16`,`0x1C`,`0x14`,`0x1D` |
+| `1` | **bit-packing struttura-aware** | 96.011 | **risolto, §9.11**: non è compressione a dizionario ma campi impacchettati a bit, parametrizzati dalla `RECORD_SIZE_TABLE` del superblock. Decoder in `carin/parser/cf1.py`. Predominante nei tipi `0x00`,`0x15`,`0x16`,`0x1C`,`0x14`,`0x1D` |
 | `2` | **zlib / RFC 1950** (`78 DA`) | 203.100 | `zlib.decompress(raw[8:])` restituisce esattamente `us*512 - 8` byte |
 
 Per `cf==2` il flusso zlib inizia **subito dopo l'header di 8 byte**; il descrittore di sezione
@@ -179,7 +201,7 @@ class CarinBlock:
         elif cf == 0:
             body = raw[BLOCK_HDR_SIZE:length * SECTOR]
         else:
-            raise NotImplementedError(f"COMPRESSION_FLAG={cf} (codec sconosciuto)")
+            body = cf1.decode_block(raw, layout_table, db_rel)[BLOCK_HDR_SIZE:]   # §9.11
         return cls(sector, length, btype, cf, us, raw[:BLOCK_HDR_SIZE] + body)
 
     def sections(self, n: int):
@@ -508,7 +530,7 @@ variabili o con padding).
 | `0x1B` | 1 | 500 | | | | | | | | | | |
 
 > `0x11`, `0x14`, `0x15`, `0x16`, `0x1C`, `0x1D`, `0x1E` non sono in tabella: la
-> maggioranza dei loro blocchi usa `COMPRESSION_FLAG = 1` (codec sconosciuto).
+> maggioranza dei loro blocchi usa `COMPRESSION_FLAG = 1` (decodificabile, §9.11).
 
 ### 6.2 Tipi `0x00`–`0x03`: stesso schema (15–16 sezioni)
 
@@ -1404,6 +1426,7 @@ struttura ma un diverso insieme di sezioni. Implementazione in
 | `cf1_defaults.py` | estrae la tabella di layout di default dal firmware |
 | `cf1_super.py` | estrae la `RECORD_SIZE_TABLE` dal superblock del disco |
 | `cf1_charmap.py` | estrae la tabella dei caratteri del decoder di testo |
+| `extract_firmware.py` | ri-estrae da `NAV_SW(v32).iso` i firmware che contengono il codec |
 | `fw_hunt_charmap.py` | cerca il codec in tutti i file di una ISO firmware |
 | `fw_arch_detect.py` | indovina la CPU di un modulo |
 | `mips_dis.py`, `mips_graph.py`, `mips_func.py` | disassemblatore, grafo di chiamata e dump annotato per i moduli MIPS |

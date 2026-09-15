@@ -10,7 +10,6 @@ Uso: python3 scripts/cf1_sweep.py [--limit N]
 from __future__ import annotations
 
 import argparse
-import pickle
 import struct
 import sys
 from pathlib import Path
@@ -23,7 +22,6 @@ from carin.parser.iso import CarinVolume, IsoImage  # noqa: E402
 from cf1_super import layout_table  # noqa: E402
 
 ISO = "dataset/NAV_DB_21708.ISO"
-PKL = "build/cross_iso_type0.pkl"
 PRINTABLE = set(range(0x61, 0x7B)) | {0x20, 0x2D, 0x27, 0x2E} | set(range(0xC0, 0xFF))
 
 
@@ -55,15 +53,13 @@ def main(argv: list[str]) -> int:
     base = table[cf1.T_DESC_BASE]
     rec14 = table[cf1.T_REC_S14]
 
-    cands = [v for v in pickle.load(open(PKL, "rb"))["old_map"].values() if v[2] == 1]
+    cands = (b.sector for b in vol.walk(0) if b.type == 0x00 and b.comp == 1)
     print(f"{'settore':>9} {'usize':>5} {'pbits':>5} "
           f"{'e10':>4} {'e11':>4} {'e12':>4} {'e13':>4} {'e14':>4} {'plaus':>6} {'lett':>5}  esito")
     ok = 0
     done = 0
-    for sector, _length, _cf in sorted(cands)[: args.limit * 3]:
+    for sector in cands:
         blk = vol.block(sector)
-        if blk.type != 0x00 or blk.comp != 1:
-            continue
         ents = [struct.unpack_from(">HH", blk.raw, base + 4 * i) for i in range(15)]
         pbits = cf1.bits_needed(blk.usize * 512)
         try:

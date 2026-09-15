@@ -13,6 +13,8 @@ import zlib
 from dataclasses import dataclass
 from typing import Dict, Iterator, Optional
 
+from . import cf1
+
 ISO_SECTOR = 2048
 CARIN_SECTOR = 512
 CARIN_WINDOW = 0x400000  # CARINdb sectors covered by one DB_n file (2 GiB)
@@ -97,15 +99,18 @@ class CarinBlock:
     sector: int          # absolute virtual CARINdb sector
     length: int          # on-disk length, in 512-byte sectors
     type: int
-    comp: int            # 0 = raw, 1 = unknown codec, 2 = zlib
+    comp: int            # 0 = raw, 1 = structure-aware bit packing, 2 = zlib
     usize: int           # decompressed size, in 512-byte sectors
     raw: bytes           # on-disk bytes, header included
-    data: Optional[bytes]  # decompressed bytes, header included (None if comp == 1)
+    data: Optional[bytes]  # decoded bytes, header included (None if the type has no decoder yet)
 
     @property
     def payload(self) -> bytes:
         if self.data is None:
-            raise ValueError(f"block {self.sector} uses COMPRESSION_FLAG=1 (unknown codec)")
+            raise ValueError(
+                f"block {self.sector}: no CF={self.comp} decoder for BLOCK_TYPE "
+                f"{self.type:#04x} yet (see blueprint section 9.11)"
+            )
         return self.data
 
     def sections(self, n: int):
@@ -122,6 +127,25 @@ class CarinVolume:
         self.image = image
         self.parts = [image.files[p] for p in db_paths]
         self.sectors = [f.size // CARIN_SECTOR for f in self.parts]
+        self._layout: Optional[dict] = None
+        self._db_rel = 0
+
+    @property
+    def layout(self) -> dict:
+        """RECORD_SIZE_TABLE del superblock — parametrizza il codec CF=1 (§9.11)."""
+        if self._layout is None:
+            sb = self.read_sectors(0, 2)
+            off, count = struct.unpack_from(">HH", sb, 0x28)
+            self._layout = dict(
+                struct.unpack_from(">HH", sb, off + 4 * i) for i in range(count)
+            )
+            self._db_rel = struct.unpack_from(">H", sb, 0x1A)[0]
+        return self._layout
+
+    @property
+    def db_rel(self) -> int:
+        self.layout  # popola anche _db_rel
+        return self._db_rel
 
     def read_sectors(self, sector: int, count: int) -> bytes:
         idx, local = divmod(sector, CARIN_WINDOW)
@@ -140,6 +164,11 @@ class CarinVolume:
             data = raw
         elif cf == 2:
             data = raw[:BLOCK_HDR_SIZE] + zlib.decompress(raw[BLOCK_HDR_SIZE:])
+        elif cf & 1:
+            try:
+                data = cf1.decode_block(raw, self.layout, self.db_rel)
+            except cf1.Cf1Error:
+                data = None          # tipo di blocco non ancora portato
         else:
             data = None
         return CarinBlock(sector, length, btype, cf, us, raw, data)

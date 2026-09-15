@@ -5,7 +5,7 @@ M$Size (offset +4, u32 big-endian). L'header porta anche nome, tipo/linguaggio
 e, per i moduli eseguibili, l'offset dell'entry point (M$Exec, +0x30).
 
 Uso:
-    python3 scripts/os9_modules.py build/fw/_CC93__0560_nav_sw_load
+    python3 scripts/os9_modules.py build/fw/CC93__0560_nav_sw_load
 """
 
 from __future__ import annotations

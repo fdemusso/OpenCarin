@@ -10,7 +10,6 @@ Uso: python3 scripts/cf1_layout_probe.py [--limit N]
 from __future__ import annotations
 
 import argparse
-import pickle
 import struct
 import sys
 from pathlib import Path
@@ -22,7 +21,6 @@ from carin.parser.iso import CarinVolume, IsoImage  # noqa: E402
 from cf1_super import layout_table  # noqa: E402
 
 ISO = "dataset/NAV_DB_21708.ISO"
-PKL = "build/cross_iso_type0.pkl"
 NENTRY = 15
 
 
@@ -47,15 +45,12 @@ def main(argv: list[str]) -> int:
     vol = CarinVolume(IsoImage(ISO))
     table = layout_table(vol.read_sectors(0, 2))
     base = table[0x05]
-    old = pickle.load(open(PKL, "rb"))["old_map"]
-    plains = [v for v in old.values() if v[2] == 0]
-    print(f"blocchi tipo 0x00 con CF=0: {len(plains)}")
-
     shown = 0
-    for sector, length, _cf in sorted(plains, key=lambda v: -v[1]):
-        blk = vol.block(sector)
-        if blk.type != 0x00 or blk.comp != 0:
+    for head in vol.walk(0):
+        if head.type != 0x00 or head.comp != 0:
             continue
+        sector, length = head.sector, head.length
+        blk = vol.block(sector)
         data = blk.raw
         es = entries(data, base)
         print(f"\n=== settore {sector} len={length} usize={blk.usize} "

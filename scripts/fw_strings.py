@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from os9_modules import enumerate_modules  # noqa: E402
 
-FW = "build/fw/_CC93__0560_nav_sw_load"
+FW = "build/fw/CC93__0560_nav_sw_load"
 
 
 def main(argv: list[str]) -> int:

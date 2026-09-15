@@ -23,7 +23,7 @@ import capstone
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from os9_modules import enumerate_modules  # noqa: E402
 
-FW = os.environ.get("CARIN_FW2", "build/fw2/Mk3_0127_BMWC01S_app_sw_bsw_load")
+FW = os.environ.get("CARIN_FW2", "build/fw/Mk3_0127_BMWC01S_app_sw_bsw_load")
 FP_BIAS = 0x7FF0
 
 
