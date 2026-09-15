@@ -30,11 +30,12 @@ def decode_0e(sector):
     e1 = get_entry(1)
     e2 = get_entry(2)
     
+    # tbl[0x2b] = 48-byte plaintext prologue length for type 0x0E (see
+    # CARINDB_BLUEPRINT_EN.md sec. 9). Firmware's copy_raw(a2, n=tbl[0x2b])
+    # at pbp+0x432a already consumes the whole prologue; count_N follows
+    # immediately, no extra skip.
     cursor = tbl[0x2b] # 48
-    
-    # In firmware: copy_raw(8) into -$7126
-    cursor += 8
-    
+
     count_N = struct.unpack_from(">H", src, cursor)[0]
     cursor += 2
     raw_12 = src[cursor : cursor + count_N * 12]
@@ -45,9 +46,13 @@ def decode_0e(sector):
     cursor += 2
     
     bits = BitReader(src, cursor)
-    hdr = struct.unpack_from(">HBBBBH", src, 0)
-    usize = hdr[2]
-    ptrbits = bits_needed(usize * 512)
+    # canonical header (cf1.decode_block): BLOCK_ID u32, BLOCK_TYPE u16,
+    # COMPRESSION_FLAG @6, UNCOMPRESSED_SIZE @7 - the old ">HBBBBH" unpack
+    # misread byte 3 (part of BLOCK_ID) as usize instead of byte 7.
+    # pbp+0x4798 init(): PTRBITS = bits_needed(usize << 11) -- CD-ROM
+    # sector (2048B), not the 512B SECTOR constant used elsewhere in cf1.py.
+    usize = src[7]
+    ptrbits = bits_needed(usize << 11)
     
     for i in range(e0["count"]):
         A = bits.get(ptrbits)
@@ -57,15 +62,22 @@ def decode_0e(sector):
         if inherit:
             _ = bits.get(3)
             _ = bits.get(ptrbits)
-        D_idx = bits.get(bits_needed(e1["count"] + 1))
-        
+        D_idx = bits.get(bits_needed(e1["count"]))
+
     s1_edges = []
     for i in range(e1["count"]):
-        s2_bits = bits_needed(e2["count"] + 1)
+        s2_bits = bits_needed(e2["count"])
         s2_idx = bits.get(s2_bits)
         inherit2 = bits.get(1)
         if inherit2:
             count2 = bits.get(s2_bits) + 2
+            # Residual desync guard: a genuine edge never spans more
+            # geometry records than exist in section 2. A handful of
+            # records still decode an absurd span (seen: 258-930 vs
+            # e2.count=556); until that's root-caused, treat it as
+            # corrupt rather than drawing a line across the whole block.
+            if count2 > e2["count"]:
+                count2 = 1
         else:
             count2 = 1
         flag = bits.get(1)
@@ -112,27 +124,30 @@ print(f"Bad geometries: {len(bad)}")
 features = []
 for edge in edges:
     s2_idx = edge["s2_idx"]
-    count = edge["count"]
-    
+    # NOTE: edge["count"] ("count2") is bit-width-verified correct (matches
+    # asm/decompile exactly) but its MEANING as "walk this many consecutive
+    # s2_records" is wrong: consecutive array index is not consecutive
+    # geography here (verified - a handful of s2_records form a real,
+    # coherent Sardinia sub-cluster (anchor idx 1-11) sitting next to the
+    # main Puglia cluster in the SAME anchor table; walking count2 stitches
+    # a Sardinia anchor to an unrelated Puglia anchor into one LineString,
+    # which is what produced the hairball. Single-record rendering below
+    # has zero cross-cluster jumps; count2's real meaning is still unknown.
     if s2_idx >= len(s2_recs): continue
-    
+    rec = s2_recs[s2_idx]
+
     coords = []
-    for j in range(count):
-        if s2_idx + j >= len(s2_recs): break
-        rec = s2_recs[s2_idx + j]
-        
-        if rec["idx_N"] >= 159: continue # skip bad ones for drawing
-        
+    if rec["idx_N"] < 159: # skip bad ones for drawing
         lon, lat = to_wgs84(rec["x_anc"], rec["y_anc"])
         coords.append([lon, lat])
-        
+
         d = rec["deltas"]
         if d[0][0] != 0x7FFF:
             dx1 = sign_extend(d[0][0], d[0][1])
             dy1 = sign_extend(d[1][0], d[1][1])
             dx2 = sign_extend(d[2][0], d[2][1])
             dy2 = sign_extend(d[3][0], d[3][1])
-            
+
             coords.append(list(to_wgs84(rec["x_anc"] + dx1, rec["y_anc"] + dy1)))
             if dx2 != 0x7FFF and d[2][0] != 0x7FFF:
                 coords.append(list(to_wgs84(rec["x_anc"] + dx2, rec["y_anc"] + dy2)))
