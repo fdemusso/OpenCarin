@@ -122,8 +122,8 @@ mkdir -p dataset
 
 ```bash
 # Clone the repository
-git clone https://github.com/flaviodemusso/bmwnavupgrade.git
-cd bmwnavupgrade
+git clone https://github.com/fdemusso/OpenCarin.git
+cd OpenCarin
 
 # Create and activate virtual environment
 python3 -m venv venv
