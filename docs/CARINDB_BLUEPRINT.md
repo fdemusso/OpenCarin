@@ -132,7 +132,7 @@ Quindi `payload_index = offset - 8`.
 | Valore | Codec | Blocchi | Verifica |
 |---:|---|---:|---|
 | `0` | nessuna compressione | 15.984 | payload usato as-is |
-| `1` | **UNKNOWN_CODEC** | 96.011 | non è zlib né raw-deflate (testati `wbits` −15/15/31/47 su ogni offset 8..3000). Byte più frequenti: `0x00,0x10,0x02,0x01,0x80,0x08`. Predominante nei tipi `0x00`,`0x15`,`0x16`,`0x1C`,`0x14`,`0x1D` |
+| `1` | **UNKNOWN_CODEC** | 96.011 | codec proprietario, non identificato. Vedi §9 per tutto ciò che è stato escluso e misurato. Predominante nei tipi `0x00`,`0x15`,`0x16`,`0x1C`,`0x14`,`0x1D` |
 | `2` | **zlib / RFC 1950** (`78 DA`) | 203.100 | `zlib.decompress(raw[8:])` restituisce esattamente `us*512 - 8` byte |
 
 Per `cf==2` il flusso zlib inizia **subito dopo l'header di 8 byte**; il descrittore di sezione
@@ -573,77 +573,397 @@ Valori osservati: 98.304 / 196.608 / 393.216 / 786.432 / 1.572.864 / 3.145.728.
 
 ---
 
-## 7. Sistema di coordinate — **PARZIALMENTE RISOLTO**
+## 7. Sistema di coordinate — **RISOLTO**
 
-### 7.1 Cosa è certo
+```
+X = (lon + 30.0) * 2_000_000_000 / 360        lon = X / K - 30.0
+Y = (lat +  0.0) * 2_000_000_000 / 360        lat = Y / K
+K = 2e9 / 360 = 5_555_555.5555…  unità / grado
+```
 
-* Le coordinate sono **2 interi con segno a 32 bit** (`X`, `Y`), Big-Endian.
-* `X` cresce verso **est**, `Y` cresce verso **nord** (asse Y non invertito).
-* Le celle sono quadrate in unità: `lato = 98304 * 2^k` (98304 = `0x18000`).
-* Estensione totale osservata sui blocchi POI:
-  `X 4.816.896 … 920.223.744` — `Y 150.622.208 … 389.697.536`.
-* Tutte le coordinate osservate sono positive.
+Un giro completo di 360° vale esattamente **2.000.000.000 di unità**: entra in un
+`int32` con segno (max 2.147.483.647) con margine. 1 unità = **0,18 µ°** ≈ 2 cm
+all'equatore. L'origine è sull'**equatore a 30° Ovest**; l'asse X cresce verso est,
+l'asse Y verso nord, la relazione è **lineare in latitudine** (nessuna proiezione
+Mercator).
 
-### 7.2 Metodo di calibrazione usato
+### 7.1 Come è stato determinato
 
-Le stringhe POI identificano il territorio di un tile. Ancore usate:
+I blocchi di tipo `0x16` contengono record da 20 byte con coordinate assolute a
+32 bit e un puntatore al nome (§6.6). Da lì sono stati estratti i punti-etichetta
+di 38 città europee (`scripts/extract_anchors.py`) e confrontati con il centro
+WGS84 pubblicato (`scripts/optimize_coords.py`).
 
-| Tile (X_min..X_max / Y_min..Y_max) | Stringhe POI | Luogo |
+| Fit | K | Cx | Cy | rms | max |
+|---|---|---|---|---|---|
+| libero (3 parametri, Levenberg-Marquardt) | 5.556.973 | 29,9891 | −0,0102 | 2,00 km | 4,07 km |
+| ipotesi `K = 2e9/360`, `Cx = 30`, `Cy = 0` (0 parametri) | 5.555.556 | 30,0000 | 0,0000 | **2,00 km** | 4,09 km |
+
+Il fit libero converge su `Cx = 29,989` e `Cy = −0,010` — cioè 30 e 0 entro il
+rumore — e l'ipotesi a **zero parametri liberi dà lo stesso rms del fit a tre
+parametri**. I 2 km residui sono l'offset fra il punto-etichetta della città nel
+database e il centro città di riferimento, non un errore di modello.
+Lo scarto fra K libero e `2e9/360` è **+0,0255 %**, dentro 1σ.
+
+Residui per le ancore migliori: toulouse 0,17 km · bordeaux 0,28 km · köln 0,37 km ·
+praha 0,47 km · amsterdam 0,47 km · zaragoza 0,47 km · helsinki 0,66 km.
+
+### 7.2 Verifiche indipendenti
+
+Nessuna di queste città è stata usata nel fit:
+
+| Blocco / tile | decodifica | realtà |
 |---|---|---|
-| 4.816.896..7.962.624 / 213.536.768..216.682.496 | `bensaude turismo`, `ilha azul`, `investacor` | Azzorre (Faial) |
-| 64.585.728..67.731.456 / 153.767.936..156.913.664 | `la caja de canarias`, `parador nacional`, `betacar` | Canarie occidentali (La Palma) |
-| 243.892.224..247.037.952 / 222.973.952..226.119.680 | `banco di napoli`, `totalerg` | Napoli |
-| 158.957.568..162.103.296 / 333.074.432..336.220.160 | `bank of scotland`, `clydesdale bank` | Shetland/Scozia |
+| tile POI più a ovest | lon −29,13…−28,57 · lat 38,44…39,00 | Faial/Pico, Azzorre (−28,7 · 38,58) ✅ |
+| tile POI più a sud | lon −18,38…−17,81 · lat 27,68…28,24 | El Hierro / La Palma sud ✅ |
+| tile POI più a nord con stringhe | lon −1,39…−0,82 · lat 59,95…60,52 | Shetland, Lerwick (−1,15 · 60,15) ✅ |
+| tile POI più a est con stringhe | lon 18,4…19,0 | Ostrava (CZ) / Otranto (IT) ✅ |
+| cluster POI Canarie (5 gruppi) | −17,85 / −17,22 / −16,50 / −15,50 / −13,78 | La Palma · La Gomera · Tenerife · Gran Canaria · Fuerteventura+Lanzarote ✅ |
+| bbox blocco `0x01` sett. 6117309 | −5,92…−5,35 · 35,61…36,17 | Stretto di Gibilterra ✅ |
 
-Risolvendo `X = K·(lon + Cx)`, `Y = K·(lat + Cy)` come problema di **appartenenza al tile**
-(non fit ai minimi quadrati) su queste 4 ancore:
+I tile POI che arrivano a `X = 920.223.744` (lon ≈ 135° E) sono **celle vuote del
+quadtree mondiale** (`COMPRESSION_FLAG=0`, zero record, zero stringhe): struttura,
+non copertura.
 
-```
-K  ∈ [5.615.590 , 5.646.170]  unità / grado      (≈ 5.63e6)
-Cx ∈ [ +29,48 , +30,08 ] gradi                    (origine X ≈ 29,8° W)
-Cy ∈ [  −2,34 ,  −0,84 ] gradi
-```
+### 7.3 Griglia quadtree
 
-Una quinta ancora (Bari/Puglia) è risultata incompatibile: i marchi bancari pugliesi
-coprono l'intera regione, quindi la stima di lon/lat era troppo imprecisa.
+Tutti i bordi dei tile sono multipli esatti di **98.304 unità** (= 3 · 2^15 =
+0,0176896°), con origine in `(0, 0)`, cioè 30° O sull'equatore. I lati osservati
+sono `98304 · 2^k` per k = 0…5, con rapporto d'aspetto 1:1, 1:2 o 2:1.
 
-### 7.3 Cosa resta UNKNOWN
+### 7.4 Bounding box per tipo di blocco
 
-* Il valore **esatto** di `K`. Candidati "tondi" nell'intervallo: `0x560000 = 5.636.096`
-  e `2^24/3 = 5.592.405` (quest'ultimo appena fuori dal vincolo su Y, entro l'errore
-  delle ancore). **Non usare questi valori come certi.**
-* Il significato esatto degli offset `Cx`, `Cy` (perché l'origine non sia a 0°/0°).
-* Se ci sia una proiezione (una verifica Mercator su `Y` dà residui *peggiori* del
-  modello lineare, quindi `Y` è verosimilmente **lineare in latitudine**).
-* I 4 `i32` a `0x618` nel blocco `0x07` **non** sono la bbox globale in questo frame:
-  restituirebbero longitudini di −74°..+211°. Marcati `RESERVED`.
+La bbox (`4 × int32` = `X_min, Y_min, X_max, Y_max`) segue immediatamente il
+section descriptor. **Il numero di voci del descriptor varia da blocco a blocco**,
+quindi la bbox va localizzata con un vincolo di griglia (`carin.parser.iso.find_bbox`):
+lati multipli di 98.304 e rapporto d'aspetto 1:1 / 1:2 / 2:1.
 
-### 7.4 Come chiudere il punto (procedura consigliata)
+| Tipo | offset bbox | copertura del locator |
+|---|---|---|
+| `0x00`–`0x03` | `0x44` | 60/60 |
+| `0x06` | `0x10` | 60/60 |
+| `0x14`, `0x15`, `0x16`, `0x1C` | `0x20` | 60/60 |
+| `0x1D`, `0x1E` | `0x20` | 43/60, 20/39 |
+| `0x0C`, `0x0E`, `0x10`, `0x0F`, `0x11`, `0x17`, `0x19` | — | **nessuna bbox**: georeferenziati indirettamente |
 
-Cercare tile POI di livello fine (`lato = 98304`, ≈ 0,017°) contenenti un marchio
-mono-sede, oppure decodificare un record `0x06` con nome di aeroporto. Due ancore
-di quel tipo fissano `K` a meglio dello 0,05%.
+### 7.5 Struct Python
 
 ```python
-# calibrazione provvisoria — NON per produzione
-K  = 5_636_096          # unità / grado  (incertezza ±0,3%)
-CX = 29.8               # gradi
-CY = -1.6               # gradi
-def to_wgs84(x, y): return (x / K - CX, y / K - CY)     # -> (lon, lat)
-def to_carin(lon, lat): return (round((lon + CX) * K), round((lat + CY) * K))
+CARIN_UNITS_PER_TURN = 2_000_000_000
+K = CARIN_UNITS_PER_TURN / 360.0      # 5_555_555.5555...
+LON_ORIGIN, LAT_ORIGIN = -30.0, 0.0
+QUADTREE_UNIT = 98_304
+
+BBOX_FMT = ">4i"                      # X_min, Y_min, X_max, Y_max
+
+def to_wgs84(x, y):
+    return (x / K + LON_ORIGIN, y / K + LAT_ORIGIN)
+
+def to_carin(lon, lat):
+    return (round((lon - LON_ORIGIN) * K), round((lat - LAT_ORIGIN) * K))
 ```
 
 ---
 
-## 8. Roadmap di verifica (cosa manca per compilare)
+## 8. Formati record georeferenziati
+
+### 8.1 Tipo `0x06` — record POI, **28 byte** (non 24)
+
+```
+ off  size  campo
+ 0x00   4   BLOCK_ID del blocco 0x10 (street/name parcel) che contiene il POI
+ 0x04   2   UNKNOWN (multiplo di 8)
+ 0x06   2   LOCAL_X    posizione nel tile, passo 64        <- ordinato crescente
+ 0x08   2   LOCAL_Y    posizione nel tile, passo 64
+ 0x0A   2   CATEGORY   (0x0016, 0x0017, 0x001F, 0x0023, 0x0030, …)
+ 0x0C   4   0x00000000
+ 0x10   4   BRAND_REF  riferimento globale alla catena (ricorrente fra blocchi)
+ 0x14   4   0x00000000
+ 0x18   4   0x00000000
+```
+
+**Scala locale = 64, esatta:**
+
+```
+X_abs = X_min + LOCAL_X * 64
+Y_abs = Y_min + LOCAL_Y * 64
+```
+
+Verificato su 2.395 blocchi: per ogni dimensione di tile osservata,
+`max(LOCAL_X) = (X_max − X_min)/64 − 1` esattamente.
+
+| lato tile (unità) | 98304 | 196608 | 393216 | 786432 | 1572864 | 3145728 |
+|---|---|---|---|---|---|---|
+| `max(LOCAL_X)` misurato | 1535 | 3071 | 6143 | 12287 | 24575 | 49151 |
+| `lato/64 − 1` atteso | 1535 | 3071 | 6143 | 12287 | 24575 | 49151 |
+
+Risoluzione POI: 64 unità = 1,15e−5° ≈ **1,2 m**.
+Il blob di nomi (Latin-1, `\0`-terminato) segue i record; contiene **173 nomi
+distinti in tutto il DB**, tutti marchi/catene (banche, carburanti, hotel) —
+nessun toponimo, nessun aeroporto.
+
+Estratti dall'immagine: **2.048.403 POI**.
+
+### 8.2 Tipo `0x16` — record feature, **20 byte**
+
+Layer delle feature nominate (isole, laghi, fiumi, fjord, etichette di città).
+È la sorgente di ancore geografiche del database.
+
+```
+ off  size  campo
+ 0x00   2   NAME_PTR   offset del nome nel blocco stesso, Latin-1, \0-terminato
+ 0x02   2   UNKNOWN (puntatore interno)
+ 0x04   4   UNKNOWN
+ 0x08   4   X          int32 assoluto
+ 0x0C   4   Y          int32 assoluto
+ 0x10   2   UNKNOWN
+ 0x12   2   offset di un'altra sezione del blocco
+```
+
+I record stanno nella sezione indicata dalla **voce 1** del descriptor
+(`struct.unpack_from(">HH", payload, 12)`), con un record sentinella in coda.
+
+```python
+FEATURE_REC = ">HHIiiHH"     # 20 byte
+```
+
+Esempio verificato (settore 6326923, bbox Göteborg):
+`landvettersjön` → X=234411946 Y=320448230 → **12,196° E · 57,681° N**
+(Landvettersjön reale: 12,32 E · 57,68 N).
+
+Lo stesso layout a 20 byte con coordinate assolute vale per i tipi `0x14`,
+`0x1C`, `0x1D`, `0x1E` (label di mari, regioni, grandi città).
+
+### 8.3 Dove stanno i nomi
+
+| Tipo | contenuto testuale |
+|---|---|
+| `0x0C`, `0x0E` | toponimi / comuni (≈3.600 stringhe distinte per campione) |
+| `0x10`, `0x17`, `0x19` | odonimi (nomi di strada) |
+| `0x15` | comuni / frazioni |
+| `0x16` | isole, laghi, corsi d'acqua, etichette città |
+| `0x14`, `0x1C`, `0x1D`, `0x1E` | mari, oceani, regioni, grandi città (multilingua) |
+| `0x06` | marchi POI |
+| `0x07`, `0x0A` | nomi paese |
+
+---
+
+## 9. `COMPRESSION_FLAG = 1` — stato dell'analisi
+
+96.011 blocchi su 315.095 (30 %) usano questo codec. **Non è necessario per il
+compilatore**: un database generato può usare solo `CF=0` e `CF=2`. Serve solo a
+leggere integralmente il disco originale.
+
+### 9.1 Struttura del blocco
+
+Il prologo è **in chiaro**, identico a un blocco `CF=0`: header di 8 byte,
+section descriptor, bbox, service data. Gli offset di sezione del descriptor sono
+espressi nello spazio **decompresso** e sono coerenti con `UNCOMPRESSED_SIZE*512`.
+Lo stream compresso comincia dopo il service data.
+
+```
+tipo 0x1E, settore 6452121, len=4 (2048 B) us=6 (3072 B)
+0000: 62 73 99 04  00 1e  01 06        header: sett. 0x627399, 4 sett., tipo 0x1E, CF=1, US=6
+0008: 0034 0004 0048 0010 019c 0003 01dc 010d 0000 0000 0610 005a   descriptor
+0020: 03198000 107a5000 09198000 167a5000                            bbox
+0030: 0001 000b 1300 0a00                                            service (in chiaro)
+0038: 02 04 81 41 a8 40 3a 67 ...                                    <- stream compresso
+```
+
+### 9.2 Misure
+
+| grandezza | valore |
+|---|---|
+| rapporto di compressione | 1,33 – 2,65 (mediana ≈ 1,6) |
+| entropia dello stream | **7,17 – 7,84 bit/byte** |
+| padding di zeri in coda | 0 – 500 byte |
+| prologo in chiaro | 48 B (tipo `0x0E`) · 56 B (`0x14`…`0x1E`) · 116 B (`0x00`…`0x03`) |
+
+### 9.3 Codec esclusi sperimentalmente
+
+* **zlib / raw deflate**: scansione esaustiva di *ogni offset di byte e di ogni
+  fase di bit* (shift a sinistra e a destra, `wbits` −15/15) sull'intero blocco →
+  nessuno stream valido. `scripts/analyze_codec.py`.
+* **LZ4 raw block**: output ≤ 1 byte.
+* **LZW** 9→12/13/14 bit, MSB e LSB first, con e senza early change: nessun output
+  plausibile (score oracolo ≤ 0,80).
+* **LZSS/LZ77 byte-allineato**: griglia di 384 combinazioni (bit letterale 0/1,
+  ordine LSB/MSB, finestra 1024/2048/4096/8192, offset a 10/11/12/13 bit, tre
+  impacchettamenti della coppia back-reference, riempimento iniziale `0x00`/`0x20`).
+  Nessuna combinazione produce né la lunghezza attesa né testo leggibile.
+
+### 9.4 Il risultato che indica la strada
+
+Confronto di 8-grammi condivisi fra coppie di blocchi dello **stesso tipo**:
+
+| insieme | blocchi | lunghezza media | 8-grammi condivisi per coppia |
+|---|---|---|---|
+| tipo `0x16`, `CF=1` | 12 | 14.988 B | **13,0** |
+| tipo `0x16`, `CF=2` (zlib) | 12 | 23.638 B | **0,0** |
+| tipo `0x15`, `CF=1` | 12 | 7.055 B | **3,0** |
+| tipo `0x15`, `CF=2` (zlib) | 12 | 16.594 B | **0,0** |
+| tipo `0x1E`, `CF=1` | 12 | 1.672 B | **4,0** |
+| controllo casuale | 12 | 2.000 B | **0,0** |
+
+Blocchi zlib più grandi non condividono **nessun** 8-grammo, perché l'albero di
+Huffman dinamico distrugge l'allineamento di byte. I blocchi `CF=1` ne condividono
+regolarmente. Conseguenze:
+
+1. Il codec è **deterministico e senza stato fra blocchi** — non è cifratura con
+   chiave/IV per blocco.
+2. Il codice è **allineato al byte** oppure usa una **tabella statica condivisa**:
+   sequenze di input identiche producono byte di output identici.
+3. Quindi è attaccabile con analisi di frequenza / ricerca di corrispondenze fra
+   blocchi, senza dover indovinare il formato a priori.
+
+### 9.5 Layout verificato del tipo `0x1E` (sezioni, offset a offset)
+
+Ricavato confrontando 3 blocchi `CF=0` a schema diverso (`6452125`: 2 settori,
+descriptor 6 voci; `6452128`: 1 settore; `6452121` citato in §9.1) e verificato che
+tutte le formule tornano esatte sui tre insieme:
+
+```
++0x00  header (8 B)
++0x08  SECTION_DESCRIPTOR[6]  { off, count } x 6   (sempre 6 voci per 0x14..0x1E)
++0x20  BBOX  4 x int32                              (16 B, fisso)
++0x30  SERVICE_DATA  4 B  (osservato: 00 01 00 0b costante sui campioni)
++0x34  SECTION_0  @ entry0.off, entry0.count record  — record size variabile
+       (record = (entry1.off - entry0.off) / entry0.count; 6 B nei campioni)
+       SECTION_1  @ entry1.off, **(entry1.count + 1) record da 20 B**
+       — il +1 è un record sentinella in coda, verificato su 3 blocchi
+         indipendenti: entry3.off - entry1.off == (entry1.count+1)*20 esatto
+         in tutti e tre (6452121: 0x19c-0x48=0x154=17*20; 6452127: 0x90-0x40=
+         0x50=4*20; 6452128: 0x64-0x3c=0x28=2*20). Layout record = FEATURE_REC
+         (§8.2): NAME_PTR u16, u16, u32, X i32, Y i32, u16, u16.
+       SECTION_3  @ entry3.off, entry3.count record da **4 B** (verificato:
+         6452128 (0x74-0x64)/4=4 esatto)
+       SECTION_5  @ entry5.off, entry5.count record da **4 B** (verificato:
+         6452125 (0x178-0x114)/25=4 esatto; 6452128 (0xa4-0x74)/12=4 esatto)
+         — quasi certamente { u16 offset_nel_blob, u16 lang_id }, cioè la
+         tabella di look-up nome→lingua che precede il blob di stringhe
++text  blob di stringhe Latin-1 `\0`-terminate, tante quante entry5.count
+```
+
+`entry2` e `entry4` sono sempre `{0,0}` nei campioni 0x1E — sezioni non usate da
+questo tipo. Questa mappa **non decifra il codec**, ma fissa esattamente la
+struttura attesa dell'output decompresso: utile come oracolo più stringente di
+`score_output` per un futuro tentativo (lunghezze di sezione, non solo testo
+leggibile).
+
+### 9.6 Tentativi aggiuntivi in questa sessione — tutti falliti, con misure
+
+1. **Ricerca di coppie bbox identiche fra `CF=1` e `CF=0`/`CF=2`** (l'idea più
+   diretta per ottenere una coppia chiaro/cifrato reale, non un'ipotesi).
+   Scansionati tutti i blocchi `CF=0`/`CF=1` dei tipi con bbox noto
+   (`0x14,0x15,0x16,0x1C,0x1D,0x1E`, 18.481 blocchi), estratta la bbox dal
+   prologo in chiaro (funziona anche su `CF=1`, perché il prologo non è
+   compresso), raggruppati per `(type, bbox)`. **Risultato: 18.406 gruppi su
+   18.481 blocchi, zero gruppi con CF misto.** Ogni tile del quadtree esiste una
+   volta sola con un solo livello di compressione: **non esiste nel database
+   una coppia chiaro/cifrato dello stesso contenuto.** Lo script è
+   `scripts/find_pairs.py` (spostato da scratchpad se serve rieseguirlo).
+2. **Huffman statico globale, ordine 0.** Costruito un albero di Huffman
+   canonico dalla frequenza byte aggregata su 4.000 blocchi `CF=0` (troncando
+   lo zero-padding finale). Il campione è dominato dai tipi numerici a bassa
+   entropia (byte `0x00` = 93% anche dopo il trim), quindi il modello non
+   rappresenta il contenuto testuale di `0x1E`: predice un rapporto di
+   compressione 5,3x contro l'1,33–2,65x osservato. Decodifica del blocco
+   `6452127` con questa tabella (bit-order MSB e LSB): output di lunghezza
+   sbagliata e nessun testo leggibile in nessuno dei due ordini. **Non
+   conclusivo**: esclude solo un Huffman globale ordine-0 costruito da un
+   campione non rappresentativo, non l'ipotesi in sé — servirebbe la tabella
+   vera, che non è nel prologo di nessun blocco.
+3. **Ricerca di testo in chiaro filtrato nello stream "compresso".** Grep di
+   run di 4+ caratteri Latin-1 minuscoli sui 14 blocchi `CF=1` di tipo `0x1E`:
+   trovate ~40 corrispondenze, tutte lunghe 4-5 byte, alla frequenza attesa dal
+   caso (~(27/256)^4 per posizione, coerente con match casuali su ~5.000 byte
+   totali). Un solo match è ASCII puro leggibile (`coth` in `6452200`,
+   offset `0x65`) ma non corrisponde a nessuna parola plausibile per un nome di
+   mare/oceano e non si ripete in nessun altro blocco alla stessa posizione
+   relativa. **Conclusione: nessuna fuga di testo in chiaro nello stream
+   compresso**, esclude un'ipotesi mista letterale+compresso a livello di
+   byte.
+4. **Invarianza dell'entropia a shift di bit** (0–7 bit, rotazione dell'intero
+   stream). Testato su 5 blocchi `CF=1` di tipo `0x1E` (da 374 a 4.105 B).
+   Risultato: entropia pressoché costante (variazione < 0,2 bit su tutti gli
+   shift, sia sui campioni corti che su quelli lunghi). **Non discriminante**:
+   un'entropia già alta (7,0–7,8 bit/byte) lascia poco margine per rilevare un
+   disallineamento a bit; il test non contraddice la conclusione byte-aligned
+   di §9.4 (basata sugli 8-grammi condivisi, un segnale più forte) ma nemmeno
+   la conferma in modo indipendente.
+5. **Confronto con `/TPD/*.CPR`** (fase 3 del piano). Estratti i 3 file
+   `ENG_1.CPR`, `FRE_4.CPR`, `GER_2.CPR` (stesso "Tool 5001", stesso contenuto
+   in 3 lingue). Byte 0 identico (`0x03`) su tutti; byte 1 diverge subito
+   (probabile campo lunghezza/ID per-file); **byte 2–7 identici su tutti e tre**
+   (`00 09 87 25 52 aa`), poi divergenza totale da byte 8. Entropia dei CPR:
+   **6,636–6,638 bit/byte**, nettamente più bassa dei blocchi `CF=1` (7,17–7,84).
+   Il prefisso comune di 6 byte è compatibile con un semplice magic/versione di
+   formato (troppo corto per essere un dizionario), e l'entropia più bassa è
+   spiegabile anche solo con la maggiore ridondanza del testo naturale rispetto
+   ai dati binari di CARINdb — **non prova né esclude lo stesso codec**.
+   Non approfondito oltre per limiti di tempo: servirebbe decifrare il formato
+   CPR da zero, che è un sotto-progetto a sé (nessun UNCOMPRESSED_SIZE noto per
+   validare un tentativo, a differenza dei blocchi CARINdb).
+
+### 9.7 Prossimi passi (aggiornato)
+
+1. **Il vicolo cieco più importante di questa sessione**: non esiste sul disco
+   nessuna coppia chiaro/cifrato dello stesso contenuto (§9.6.1). Qualsiasi
+   attacco know-plaintext deve quindi passare da un contenuto *ricostruito per
+   somiglianza* (blocco `CF=0` di tile adiacente/stesso tipo), non da un
+   duplicato esatto — più debole, ma è l'unica via rimasta sul disco.
+2. La mappa di sezione di §9.5 rende possibile costruire un oracolo di
+   validazione molto più stringente di `score_output`: lunghezza esatta di
+   *ogni* sezione dichiarata dal descriptor (non solo la lunghezza totale del
+   blocco). Andrebbe integrato in `compression.py` prima di ogni nuovo
+   tentativo di decodifica su tipo `0x1E`.
+3. Se si vuole insistere sull'ipotesi Huffman/tabella statica: servirebbe
+   ricavare le frequenze vere per-tipo (non un campione globale misto come in
+   §9.6.2) e provare a *rompere* il codice alla cieca (algoritmo di Cichelli o
+   ricerca golfata sull'albero a partire dalle lunghezze di codice più
+   probabili), oppure cercare la tabella tra i dati del root/`0x0D`/`0x18` non
+   ancora ispezionati byte per byte in questa sessione (`0x1B`/`0x1A` sono
+   stati ispezionati: `0x1B` è quasi tutto a zero con un solo puntatore a
+   `0x1A`; `0x1A` è una tabella sequenziale di ~430 `BLOCK_ID` con 4 byte extra
+   ciascuno, che sembra un indice di blocchi non una tabella di codifica —
+   entrambi *esclusi* come candidati tabella statica).
+4. In alternativa, decifrare `/TPD/*.CPR` come corpus indipendente (§9.6.5) resta
+   la pista più promettente non ancora battuta, ma richiede di ricostruire il
+   formato CPR da zero (nessuna documentazione di lunghezza attesa).
+
+---
+
+## 10. Toolchain
+
+| File | Funzione |
+|---|---|
+| `carin/parser/iso.py` | lettore ISO 9660 (nessun mount), `CarinVolume` sullo spazio `DB_0+DB_1`, `CarinBlock`, `find_bbox`, `to_wgs84` / `to_carin` |
+| `carin/parser/calibration.py` | `GeographicCalibrator` (Levenberg-Marquardt + grid search) |
+| `carin/parser/compression.py` | `CompressionAnalyzer`, `LzssSweep`, `sweep_lzss`, `decode_lzw`, `decode_lz4_block`, `entropy`, `plain_prefix`, `score_output` |
+| `scripts/extract_anchors.py` | estrae `(nome, X, Y)` dai blocchi `0x16` |
+| `scripts/optimize_coords.py` | calibrazione e verifica dei residui |
+| `scripts/analyze_codec.py` | analisi del codec `CF=1` su blocchi reali dell'ISO |
+| `scripts/find_pairs.py` | scansiona il DB per coppie chiaro/cifrato (bbox identica, CF diverso) — esito: nessuna trovata, §9.6.1 |
+
+```bash
+python3 scripts/extract_anchors.py --out build/cities.pkl --names paris london roma
+python3 scripts/optimize_coords.py
+python3 scripts/analyze_codec.py --type 0x1E --count 1
+```
+
+---
+
+## 11. Roadmap di verifica
 
 | # | Blocco | Stato | Priorità |
 |---|---|---|---|
-| 1 | `COMPRESSION_FLAG = 1` — codec | **UNKNOWN**, blocca il 30% dei blocchi (91.756 del tipo `0x00`) | 🔴 critica |
-| 2 | `K`, `Cx`, `Cy` esatti | vincolati al ±0,3% | 🔴 critica |
-| 3 | Semantica campi `0x0E` SECTION_0 / SECTION_1 / SECTION_2 | struttura nota, semantica no | 🔴 critica |
-| 4 | Mappa `BLOCK_TYPE → section_type[]` | non presente nei dati | 🟠 alta |
-| 5 | Risoluzione `NAME_PTR` high16 | 6 segmenti non identificati | 🟠 alta |
-| 6 | Schema `0x00`–`0x03` (15–16 sezioni) | dimensioni record note | 🟠 alta |
-| 7 | Ordine/ruolo dei 5 `u16` del tipo `0x04` | UNKNOWN | 🟡 media |
-| 8 | Checksum / CRC di blocco | **nessuno trovato** | 🟢 nessun rischio |
+| 1 | Sistema di coordinate | ✅ **RISOLTO** — `K = 2e9/360`, origine 30° O sull'equatore, rms 2,0 km su 38 ancore | — |
+| 2 | Record POI `0x06` e feature `0x16` | ✅ **RISOLTO** — 28 e 20 byte, scala locale 64 | — |
+| 3 | Bounding box per blocco | ✅ **RISOLTO** — `find_bbox`, 60/60 sui tipi georeferenziati | — |
+| 4 | `COMPRESSION_FLAG = 1` | ristretto: deterministico, byte-allineato, tabella statica; zlib/LZ4/LZW/LZSS/Huffman-ordine-0-globale esclusi; nessuna coppia chiaro/cifrato esiste sul disco (§9.6.1); layout di sezione di `0x1E` risolto (§9.5). **Non blocca il compilatore** | 🟠 alta |
+| 5 | Semantica campi `0x0E` SECTION_0/1/2 (rete stradale) | struttura nota, semantica no | 🔴 critica |
+| 6 | Georeferenziazione dei parcel `0x0C`/`0x0E`/`0x10` (via `0x0D`/`0x0F`/`0x11`) | non risolta | 🔴 critica |
+| 7 | Mappa `BLOCK_TYPE → section_type[]` | non presente nei dati | 🟠 alta |
+| 8 | Risoluzione `NAME_PTR` high16 (tabella paesi) | 6 segmenti non identificati | 🟡 media |
+| 9 | Ordine/ruolo dei 5 `u16` del tipo `0x04` | UNKNOWN | 🟡 media |
+| 10 | Checksum / CRC di blocco | **nessuno trovato** | 🟢 nessun rischio |
