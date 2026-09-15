@@ -47,13 +47,13 @@ def main(argv: list[str]) -> int:
     print("bbox/service:", raw[0x40:prolog].hex())
 
     try:
-        out = cf1.decode_block(raw, table)
+        dbrel = struct.unpack_from('>H', sb, 0x1a)[0]
+        out = cf1.decode_block(raw, table, dbrel)
     except Exception as exc:  # noqa: BLE001
         print(f"\nDECODE FALLITO: {type(exc).__name__}: {exc}")
         return 1
     print(f"\noutput {len(out)} B")
-    avail = (blk.length * 512 - 0) * 8
-    print(f"bit disponibili nel blocco su disco: {avail}")
+    used = cf1.__dict__  # placeholder
     return 0
 
 
