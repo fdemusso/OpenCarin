@@ -35,7 +35,7 @@ class GeographicCalibrator:
             res.append((pred_y - y) / 1e6)
         return np.array(res)
 
-    def optimize(self, initial_guess: Tuple[float, float, float] = (5636096.0, 29.8, -1.6)) -> Dict:
+    def optimize(self, initial_guess: Tuple[float, float, float] = (5555555.5556, 30.0, 0.0)) -> Dict:
         """
         Run least squares optimization to find best K, Cx, Cy.
         """
