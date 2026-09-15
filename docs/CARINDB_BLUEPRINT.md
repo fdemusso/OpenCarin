@@ -1278,16 +1278,78 @@ kind 0x17: dec_e2, dec_e1, dec_e0
 if getbits(1): dec_text()      # due blob di testo, non uno
 ```
 
-Campi verificati sul blocco `CF=0` reale (settore 3169061):
+Il descrittore del tipo `0x00` ha **15 voci** in DB-REL 34 (`e0..e14`), contro
+le 13 usate dal CC-93; `e13` ed `e14` sono le sezioni nuove.
 
-* sezioni 0/1/2, record da 10 B: `+0,+2,+4` come nel CC-93; `+6` e `+8` sono
-  due puntatori a `e14` (`off + idx*4`), scritti nella passata `kind 0x17` come
-  `getbits(PTRBITS-1) << 1`;
-* sezione 4, record da 32 B: identica al CC-93 per `+0..+0x15`, `+0x1a/+0x1c/+0x1e`
-  (via `T[0x09]=26`); i nuovi `+0x16` (puntatore, vale `e13.off`) e `+0x18`
-  sono scritti nelle passate successive;
-* il descrittore del tipo `0x00` ha **15 voci** in DB-REL 34 (`e0..e14`),
-  contro le 13 usate dal CC-93; `e13`/`e14` sono le sezioni nuove.
+**Sezioni 0/1/2** — tre funzioni distinte (`db_pub+0x2f30`, `+0x30dc`,
+`+0x3270`), record da 10 B, `PTRBITS` è un byte a `-0x6635($gp)`:
+
+```
+e0  kind 0x14 : if getbits(1) { getbits(PTRBITS); getbits(PTRBITS-1) }   # bit consumati, non memorizzati
+                rec[0] = getbits(PTRBITS)
+    kind 0x15 : if getbits(1) rec[2] = getbits(16)
+    kind 0x17 : rec[4] = getbits(PTRBITS-1) << 1
+
+e1  kind 0x14 : if getbits(1) { rec[2] = getbits(PTRBITS)
+                                rec[4] = getbits(PTRBITS-1) << 1 }
+                else          { rec[2] = prev[2]; rec[4] = prev[4] }
+                rec[0] = getbits(PTRBITS)
+    kind 0x17 : rec[6] = getbits(PTRBITS-1) << 1
+                rec[8] = getbits(PTRBITS-1) << 1
+
+e2  kind 0x14 : come e1
+    kind 0x17 : delta "appiccicoso" su rec[6] e rec[8] (vedi sotto)
+```
+
+Nel `kind 0x14` di `e0` i due campi vengono letti e **scartati**: il flusso li
+contiene ancora (un lettore DB-REL ≤ 22 li userebbe per `rec[2]`/`rec[4]`) ma il
+lettore nuovo li riscrive nelle passate `0x15`/`0x17`. È retrocompatibilità del
+formato, non un bug di lettura.
+
+**Delta appiccicoso** (`e2`, `kind 0x17`) — due accumulatori indipendenti:
+
+```
+delta = 0 ; acc = 0
+per record:  if getbits(1): delta = (getbits(PTRBITS-1) << 1) & 0xffff
+             rec[k] = acc = (delta + acc) & 0xffff
+```
+
+Il flag a 1 aggiorna il passo, il flag a 0 riusa l'ultimo. **Verificato contro
+il blocco `CF=0` reale**: `e2.rec[6]` vale `0, 0x2ec, 0x2f0, 0x2f4, 0x2f8, 0x2fc`
+→ passi `0, 0x2ec, 4, 4(riuso), 4(riuso), 4(riuso)`; `e2.rec[8]` vale
+`0, 4, 4, 4, 4, 4` → passi `0, 4, 0, 0(riuso), 0(riuso), 0(riuso)`. Entrambe le
+serie si riproducono esattamente, e i passi sono sempre pari come impone
+`<< 1`.
+
+**Sezione 4** (`db_pub+0x348c`), record da 32 B: identica al CC-93 per
+`+0x00..+0x15` e per i campi di coda `T[0x09]+0/+2/+4` (= `+0x1a/+0x1c/+0x1e`).
+Il campo nuovo `+0x16` si scrive nella passata `kind 0x15`:
+
+```
+if getbits(1): rec[0x16] = e13.off + getbits(PB_s13) * T[0x4c]
+else:          rec[0x16] = prev[0x16]
+PB_s13 = bits_needed(e13.count + 1)        # byte a -0x65dd($gp)
+```
+
+Coerente con il blocco reale, dove `+0x16` vale `e13.off` su tutti i record
+(`e13` vuota, quindi indice 0).
+
+**Ordine effettivo del bitstream** in `db_pub+0x3d04`:
+
+```
+kind 0x14 : dec(e0), dec(e1), dec(e2), dec_B(e4),
+            inline dec_C(e5), dec_D(e6), dec_E(e7), dec_F(e11),
+            if getbits(1): dec_text()
+PB_s13 = bits_needed(e13.count + 1)
+kind 0x15 : dec(e0), dec_B(e4), inline e13 (record T[0x4c]=8: u32, ptr, 2 byte), ...
+kind 0x17 : dec(e2), dec(e1), dec(e0)
+if getbits(1): dec_text()
+if getbits(1): dec_text()
+```
+
+I listati disassemblati e annotati sono in `docs/fw/` (`mips_*.asm` per il
+decoder DB-REL 34, `m68k_pbp_decoders.asm` per quello CC-93), così la
+trascrizione può riprendere senza rifare l'analisi.
 
 **Stato**: struttura completa e verificata; resta da trascrivere il corpo delle
 passate `0x15`/`0x17` e le inline di `dec_C/D/E` dal MIPS. Implementazione in
