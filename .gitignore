@@ -74,3 +74,4 @@ data/
 
 # scratch di sessione dell'agente
 .claude/
+docs/promt.md
