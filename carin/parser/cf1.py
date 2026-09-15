@@ -123,6 +123,7 @@ class Cf1Context:
     bits: BitReader | None = None
     pb: dict[str, int] = field(default_factory=dict)
     dbrel: int = 34
+    subrel: int = 9                 # LAYOUT[+2], sceglie larghezze di campo
     cache_s7: int = 1               # pbp: -0x7146(a6)
     cache_s2: int = 1               # pbp: -0x7144(a6)
 
@@ -359,7 +360,9 @@ def dec_d(ctx: Cf1Context) -> None:
 
     def extra(c: Cf1Context, cur: int) -> None:
         c.l(cur + off5, c.g(32))
-        c.w(cur + off5 + 4, c.g(14))
+        # db_pub+0x4604: la larghezza del campo successivo dipende dalla
+        # sotto-revisione del formato (LAYOUT[+2]), non dai dati
+        c.w(cur + off5 + 4, c.g(16 if c.subrel >= 9 else 14))
 
     _dec_xy(ctx, 6, ctx.T(T_REC_S6), extra)
 
@@ -511,7 +514,7 @@ DECODERS = {0x00: decode_type00}
 
 
 def decode_block(raw: bytes, table: dict[int, int], dbrel: int,
-                 sector_size: int = SECTOR) -> bytes:
+                 subrel: int = 9, sector_size: int = SECTOR) -> bytes:
     """Decodifica un blocco CF=1. `raw` sono i byte su disco, header incluso."""
     btype = struct.unpack_from(">H", raw, 4)[0]
     cf, usize = raw[6], raw[7]
@@ -520,7 +523,8 @@ def decode_block(raw: bytes, table: dict[int, int], dbrel: int,
     if btype not in DECODERS:
         raise Cf1Error(f"BLOCK_TYPE {btype:#04x}: decoder non ancora portato")
     total = usize * sector_size
-    ctx = Cf1Context(table=table, src=raw, dst=bytearray(total), dbrel=dbrel)
+    ctx = Cf1Context(table=table, src=raw, dst=bytearray(total), dbrel=dbrel,
+                     subrel=subrel)
     ctx.ptrbits = bits_needed(total)
     DECODERS[btype](ctx)
     ctx.dst[6] = 0

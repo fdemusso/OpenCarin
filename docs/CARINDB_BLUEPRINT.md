@@ -1351,10 +1351,49 @@ I listati disassemblati e annotati sono in `docs/fw/` (`mips_*.asm` per il
 decoder DB-REL 34, `m68k_pbp_decoders.asm` per quello CC-93), così la
 trascrizione può riprendere senza rifare l'analisi.
 
-**Stato**: struttura completa e verificata; resta da trascrivere il corpo delle
-passate `0x15`/`0x17` e le inline di `dec_C/D/E` dal MIPS. Implementazione in
-`carin/parser/cf1.py` (per ora porta la variante CC-93, cioè la passata
-`0x14`), strumenti in `scripts/`:
+#### 9.11.7 Larghezze dipendenti dalla sotto-revisione
+
+La struttura di layout ha un'intestazione di 8 byte prima dell'array indicizzato
+per `id`: `LAYOUT[+0]` è la DB-REL (`db_pub+0x1150`), `LAYOUT[+2]` una
+sotto-revisione (`db_pub+0x1164`). **Alcune larghezze di campo dipendono da
+quest'ultima, non dai dati.** Nella sezione 6 (`db_pub+0x4604`):
+
+```
+rec[T[0x10]]     = getbits(32)
+rec[T[0x10] + 4] = getbits(14 if subrel < 9 else 16)
+```
+
+Il CC-93 cablava 14 perché la sua sotto-revisione era sempre < 9. Sui dischi
+DB-REL 34 il valore corretto è **16**: con 14 il flusso si disallinea a metà
+della sezione 6 e tutto il resto del blocco diventa rumore. È l'unica differenza
+che separava una decodifica corretta da una fallita nell'80 % dei blocchi.
+
+#### 9.11.8 Risultato
+
+`scripts/cf1_sweep.py` decodifica **1200 blocchi `CF=1` di tipo `0x00`** di
+`NAV_DB_21708.ISO`: **1200 producono un blob di nomi leggibile e
+geograficamente coerente con la bbox del blocco**. Esempi reali:
+
+```
+settore 3157624  bbox lon -18.09..-17.81  lat 27.40..27.68   (El Hierro)
+  españa · el pinar de el hierro · avenida marítima · calle dos la restinga
+  calle juan gutiérrez monteverde
+settore 3178407  (Algarve)
+  portugal · lagoa · silves · cabeços · n125 · m1154 · faro
+settore 3183947  (Alentejo)
+  portugal · sines · a261 · bairro quinta dos passarinhos · n120
+```
+
+L'oracolo non è la lunghezza in uscita (§9.9.1 la confuta) ma il **contenuto**:
+il blob dei nomi sta in fondo alla prima passata, quindi testo reale implica che
+prologo, sezioni verbatim e decodifica bit-packed delle sezioni 0, 1, 2, 4, 5, 6,
+7 e 11 siano esatti byte per byte. La verifica incrociata con la bbox (§7)
+esclude ogni coincidenza: i nomi corrispondono al riquadro geografico del blocco.
+
+**Stato**: tipo `0x00` **risolto**. Restano da portare i tipi `0x0E`
+(`db_pub+0x1e98`) e `0x14`/`0x15`/`0x16` (`db_pub+0x2a7c`), che hanno la stessa
+struttura ma un diverso insieme di sezioni. Implementazione in
+`carin/parser/cf1.py`, strumenti in `scripts/`:
 
 | script | funzione |
 |---|---|
@@ -1369,6 +1408,9 @@ passate `0x15`/`0x17` e le inline di `dec_C/D/E` dal MIPS. Implementazione in
 | `fw_arch_detect.py` | indovina la CPU di un modulo |
 | `mips_dis.py`, `mips_graph.py`, `mips_func.py` | disassemblatore, grafo di chiamata e dump annotato per i moduli MIPS |
 | `cf1_layout_probe.py` | ispeziona blocchi `CF=0` reali per dedurre il layout |
+| `cf1_try.py` | decodifica un singolo blocco e stampa il descrittore |
+| `cf1_validate.py` | oracoli strutturali + testo su blocchi scelti |
+| `cf1_sweep.py` | decodifica in massa e riporta il tasso di successo |
 
 #### 9.11.7 Ipotesi da non riprendere
 
@@ -1407,7 +1449,7 @@ python3 scripts/analyze_codec.py --type 0x1E --count 1
 | 1 | Sistema di coordinate | ✅ **RISOLTO** — `K = 2e9/360`, origine 30° O sull'equatore, rms 2,0 km su 38 ancore | — |
 | 2 | Record POI `0x06` e feature `0x16` | ✅ **RISOLTO** — 28 e 20 byte, scala locale 64 | — |
 | 3 | Bounding box per blocco | ✅ **RISOLTO** — `find_bbox`, 60/60 sui tipi georeferenziati | — |
-| 4 | `COMPRESSION_FLAG = 1` | ristretto: deterministico, byte-allineato, tabella statica; zlib/LZ4/LZW/LZSS/Huffman-ordine-0-globale/**aPLib** esclusi (§9.8); nessuna coppia chiaro/cifrato esiste sul disco (§9.6.1); nessuna tabella statica in `0x0D`/`0x18`/`0x1A`/`0x1B` (§9.8.3); layout di sezione di `0x1E` risolto (§9.5). **Confronto cross-edizione 21708/21734** (§9.10): stesso schema binario, 60 tile con CF diverso per la stessa bbox, nessuna byte-identica, e anche filtrando per descriptor identico (contenuto quasi-invariato) l'intera famiglia control-byte-LZSS resta al livello del rumore (~4%). Pista non esaurita: varint/gamma per-campo (§9.8.2); riestendere il confronto cross-edizione a `0x06`/`0x16`/`0x1E`. **Non blocca il compilatore** | 🟠 alta |
+| 4 | `COMPRESSION_FLAG = 1` | ✅ **RISOLTO per il tipo `0x00`** — non è un codec a dizionario ma impacchettamento a bit guidato dalla struttura, parametrizzato dalla `RECORD_SIZE_TABLE` del superblock; decoder trovato nel firmware originale (§9.11). 1200/1200 blocchi `CF=1` di tipo `0x00` decodificati con blob dei nomi leggibile e coerente con la bbox. Restano i tipi `0x0E` e `0x14`–`0x16`, stessa struttura, sezioni diverse | 🟠 alta |
 | 5 | Semantica campi `0x0E` SECTION_0/1/2 (rete stradale) | struttura nota, semantica no | 🔴 critica |
 | 6 | Georeferenziazione dei parcel `0x0C`/`0x0E`/`0x10` (via `0x0D`/`0x0F`/`0x11`) | non risolta | 🔴 critica |
 | 7 | Mappa `BLOCK_TYPE → section_type[]` | non presente nei dati | 🟠 alta |
