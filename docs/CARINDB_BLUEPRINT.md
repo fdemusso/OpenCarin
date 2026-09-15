@@ -931,6 +931,391 @@ leggibile).
    la pista più promettente non ancora battuta, ma richiede di ricostruire il
    formato CPR da zero (nessuna documentazione di lunghezza attesa).
 
+### 9.8 Tentativi sessione 2026-09-15 — anch'essi falliti
+
+Ripartendo dall'ipotesi "i byte più frequenti sono potenze di due ⇒ control-byte
+LZSS a 1 bit" (motivazione della sessione): **l'ipotesi era già stata testata ed
+esclusa in §9.3** (la griglia di 384 combinazioni copre entrambi gli ordini di
+bit di un control-byte a potenza-di-due singola). Verifica aggiuntiva fatta qui:
+il dominio delle potenze di due nella frequenza byte **non è un segnale specifico
+del codec** — persiste identico se si guarda solo la coda dello stream oltre il
+confine di entropia (`0xC0` nel blocco tipo `0x00` esaminato), con conteggi
+4–16× l'atteso uniforme (`0x00`≈16×, `0x10`≈5×, `0x80`≈4×), MA tutti i 256 valori
+di byte compaiono comunque nello stream (nessuna evidenza di codebook ristretto).
+Non decisivo in un senso o nell'altro: è compatibile sia con un control-byte reale
+sia con un accumulo di piccoli interi/flag a livello di campo che sopravvivono a
+una compressione blanda.
+
+Nuovi tentativi, entrambi fino in fondo:
+
+1. **aPLib / aP_depack** (bitstream intrecciato byte-a-byte con lunghezze
+   gamma-codificate, non un control-byte separato con 8 token fissi — quindi
+   non coperto dalla griglia di §9.3). Portato fedelmente da
+   `https://github.com/snemes/aplib` (adattamento diretto della libreria
+   ufficiale di Jørgen Ibsen). Testato su blocco tipo `0x00` (sett. 3157624,
+   atteso 10.636 B dopo prologo di 116 B) e tipo `0x1E` (sett. 6452121, atteso
+   3.016 B dopo prologo di 56 B): **fallisce entro 3–13 byte**, andando quasi
+   subito a sbattere sul marcatore di fine stream di aPLib (`offs==0` nel ramo
+   match corto). Sweep del punto di partenza (0–250 B) sul blocco tipo `0x00`:
+   il massimo raggiunto è **59 byte su 10.636 attesi** (offset 95) — nessun
+   punto di innesco produce un flusso valido. **Escluso.**
+2. **Varint / gamma-coding a livello di campo** (ipotesi: non è compressione a
+   dizionario ma delta-coding numerico campo-per-campo, dato il rapporto di
+   compressione basso — 1,33–2,65× — e l'entropia già quasi massima, atipici
+   per LZ ma tipici di interi impacchettati). Verifica preliminare (LEB128
+   sullo stream grezzo) non discriminante da sola; non portata a un decoder
+   completo per mancanza di un oracolo di validazione a livello di campo
+   (servirebbe prima risolvere la semantica dei record del tipo bersaglio).
+   **Non conclusivo — resta la pista più promettente non ancora tentata a
+   fondo**, da abbinare all'oracolo di sezione di §9.5.
+3. **Ricerca di una tabella statica in `0x0D`/`0x18`** (segnalata come da
+   ispezionare in §9.7.3). `0x18` (sett. 6452204): confermato indice di
+   `BLOCK_ID` + 4 byte extra (nessuna struttura a 256 voci). `0x0D` (sett. 17,
+   zlib, 49.152 B decompressi): record variabili `{u32 costante-per-segmento,
+   u16 id, u16 flag, u16 offset, u16 count, u16 pad}`, chiaramente un indice
+   per range (tipo alfabetico/regionale), non una tabella di 256 lunghezze di
+   codice. **Escluso anche questo.**
+
+**Bilancio**: con questa sessione salgono a 6 le famiglie di codec escluse
+sperimentalmente (zlib, LZ4, LZW, LZSS byte-allineato a 384 varianti, Huffman
+ordine-0 globale, aPLib) più la ricerca di tabella statica nei blocchi di
+sistema. Nessuna nuova pista concreta emersa: il codec resta senza identità.
+Il blocco reale non è nel percorso critico del compilatore (§9, incipit) —
+riguarda solo la lettura completa del disco originale, non la generazione.
+
+### 9.9 Test mirato dell'ipotesi utente (prologo 189 B, LZSS custom) — falsificato con oracolo strutturale
+
+Ripresa dell'ipotesi con parametri specifici proposti dall'utente (prologo in
+chiaro 189 B = `0xBD`, finestra 4096, init a zero, control-bit MSB-first,
+0=literal/1=backref, token a 2 byte con nibble alto = lunghezza−2, 12 bit bassi
+= offset). Testata con un oracolo **molto più forte** della sola lunghezza in
+uscita:
+
+1. **La lunghezza esatta non è un oracolo valido.** Sul blocco tipo `0x00`
+   sett. 3157624 (atteso 10.752 B), *ogni* valore di prologo da 0 a 421 produce
+   un output della lunghezza esatta attesa — il ciclo si ferma appena raggiunge
+   il target, quindi centrare la lunghezza non prova nulla sui parametri.
+2. **Oracolo strutturale reale**: trovato un blocco `CF=2` (zlib, quindi
+   verità nota) dello stesso tipo `0x00` (sett. 3247755) con lo *stesso*
+   layout iniziale di descrittore (offset 116/148/180) e le stesse dimensioni
+   record di sezione (`S4=32 B`, `S5=8 B`, `S6=16 B`, confermate anche su un
+   secondo campione zlib, sett. 3249459). I record reali di `S4` mostrano
+   colonne quasi costanti e ID che crescono lentamente (es. byte 19–22 =
+   `4688000000` fisso su *tutti* i record, byte 17 incrementa di 1 record in
+   record). Score di riferimento: entropia media per colonna `S4=2,43`,
+   `S5=3,28` bit (su un alfabeto di 0-255, quindi molto più bassa di 8 =
+   dati strutturati).
+3. **Test sui parametri dell'utente** (prologo 189, off assoluto, token
+   little-endian come proposto): lunghezza esatta raggiunta su 6/8 blocchi
+   campione, ma **contenuto della sezione non strutturato** (nessuna colonna
+   costante, nessun ID monotono) — falsificato per ispezione diretta, non solo
+   per l'oracolo.
+4. **Grid search guidato dall'oracolo strutturale** (bit letterale 0/1, ordine
+   bit MSB/LSB, endianness token LE/BE, split lunghezza 4/5/6 bit, bias 2/3,
+   offset come posizione assoluta vs distanza all'indietro — 96 combinazioni
+   a lunghezza esatta): la combinazione più vicina al bersaglio (`lit_bit=0`,
+   `MSB`, **token big-endian** — non little come ipotizzato —, lunghezza=nibble
+   alto+3, **offset come distanza all'indietro** da `pos` non posizione
+   assoluta) eguaglia il bersaglio entro 0,001 sulla somma (`S4=2,44`,
+   `S5=3,27` contro `2,43`/`3,28` reali) — ma **l'ispezione byte-per-byte
+   mostra comunque rumore**, non i campi costanti/monotoni reali. La vicinanza
+   nell'entropia media di colonna è quindi una **coincidenza statistica**
+   (probabilmente dovuta alla stessa densità di zeri), non un segnale di
+   correttezza: l'oracolo per entropia media aggregata non basta, servirebbe
+   un test per colonna-per-colonna sulla moda/varianza, non sulla sola
+   entropia media.
+5. **8-grammi condivisi anche sul tipo `0x00`** (non ancora verificato in
+   §9.4, che copriva solo `0x14`–`0x1E`): confermato — media 9,0 8-grammi
+   condivisi per coppia su 66 coppie di blocchi `CF=1` tipo `0x00` (fino a 38
+   su una singola coppia), ben sopra il rumore. Trovato anche un frammento
+   **non banale** di 14 byte, tutti e 14 distinti (nessuna ripetizione interna,
+   quindi non spiegabile con padding/pattern ovvio), identico byte-per-byte
+   fra sett. 3157667 (offset 15625 nello stream) e sett. 3157861 (offset
+   15774): `04 81 10 32 08 42 c8 61 0e 21 e4 4c 89 31`. Conferma che il codec
+   è **byte-allineato e deterministico anche per il tipo `0x00`** (coerente
+   con §9.4) — probabilità di una coincidenza casuale su 14 byte tutti diversi
+   è trascurabile. È il miglior candidato per un futuro attacco a testo noto
+   differenziale (non ancora tentato: servirebbe allineare le due
+   decompresse e dedurre struttura token dalla posizione del match), ma non è
+   stato sufficiente in questa sessione per determinare i parametri esatti.
+
+**Conclusione**: l'ipotesi del control-byte a singolo bit (in qualunque delle
+>480 varianti provate fra le due sessioni: 384 + 96) è **verosimilmente
+sbagliata nella sua interezza**, non solo nei dettagli di bit-order/endianness.
+Il segnale byte-allineato/deterministico (8-grammi condivisi, frammento di 14
+byte) resta valido e va sfruttato con un metodo diverso — differenziale sui
+frammenti condivisi, non ricerca a griglia sui parametri di un modello fisso.
+
+### 9.10 Confronto cross-edizione (CD-ID 21708 vs 21734) — metodologia nuova, stesso esito negativo
+
+Resa disponibile una seconda immagine dello stesso formato: `NAV_DB_21734`
+("High_2019_WE_SC_SL.bin", build 2018-05-09, DB-REL 34 / BSW-REL 10 11 —
+**stesso schema binario** della 21708 del 2015-08-04, quindi confrontabile
+byte per byte). A differenza di quanto ipotizzato in §9.7.1, questo *non*
+fornisce una coppia chiaro/cifrato esatta (il contenuto cambia fra edizioni
+anche a parità di tile), ma fornisce comunque leva concreta:
+
+1. **Metodo**: la bbox del tipo `0x00` sta a offset decompresso `0x44`, **dentro
+   il prologo in chiaro** (~0xBD) — quindi leggibile anche su blocchi `CF=1`
+   senza decomprimere. Scansionati tutti i blocchi tipo `0x00` di entrambe le
+   immagini (36.452 in 21708, 28.008 in 21734), indicizzati per bbox esatta:
+   **21.751 bbox in comune**. Distribuzione `(cf_old, cf_new)`:
+   `{(1,1): 21363, (0,0): 328, (1,0): 31, (0,1): 29}` — **60 tile con
+   compressione diversa fra le due edizioni per lo stesso riquadro
+   geografico**, il più vicino possibile a una coppia chiaro/cifrato reale
+   ottenibile da questo materiale.
+2. **Nessuna coppia è byte-identica**: 0 dei 60 casi con `UNCOMPRESSED_SIZE`
+   uguale ha contenuto zlib/raw identico — il tile è quasi sempre stato
+   aggiornato fra il 2015 e il 2018 (strade/POI aggiunti), anche quando la
+   dimensione non cambia.
+3. **Filtro per contenuto verosimilmente stabile**: il `SECTION_DESCRIPTOR`
+   (8 coppie `offset,count`) è leggibile in chiaro **indipendentemente dal
+   CF**. Filtrando le 60 coppie per descriptor identico su tutte le 8 entry
+   fra le due edizioni → 12 coppie con probabile contenuto quasi invariato
+   (stesso numero di record per sezione, stessi offset).
+4. **Test**: per ciascuna delle 12 coppie "stabili", decompresso il lato
+   `CF=1` con la stessa griglia di parametri di §9.9 (bit letterale, ordine,
+   endianness token, split lunghezza/offset, distanza vs posizione assoluta)
+   e confrontato con `difflib.SequenceMatcher` contro il contenuto reale
+   dell'altra edizione (`CF=0`), **escludendo** sia il prologo in chiaro
+   (`< 0xBD` su entrambi i lati) sia i blocchi di corrispondenza a bassa
+   varietà (`len(set(bytes)) < 3`, cioè run di zeri) per evitare il falso
+   segnale già scoperto in §9.9.4. Miglior combinazione: **32–70 byte
+   corrispondenti non banali su ~1.024–1.200 byte per blocco** (somma 590 su
+   14.336 totali, ~4%) — **al livello del rumore**: gli scarti sono frammenti
+   sparsi di 4–14 byte a bassa informazione (`0000000000...` con 1-2 byte
+   diversi), non le lunghe corrispondenze ad alta varietà che ci si
+   aspetterebbe da una decompressione vera (come il frammento di 14 byte,
+   tutto diverso, di §9.8.5).
+5. **Conclusione**: anche con un oracolo di verità reale molto più forte
+   (contenuto quasi-invariato di una tile fra due edizioni, non solo
+   statistica sintetica), **nessuna combinazione della famiglia
+   control-byte-LZSS riproduce contenuto reale**. Questo non prova che il
+   codec non sia LZSS in senso lato, ma esclude con la massima confidenza
+   raggiunta finora l'intera famiglia "control-byte a 1 bit + token a 2 byte"
+   testata da §9.3 a qui (>650 combinazioni), qualunque sia l'assegnazione di
+   bit/endianness/offset.
+6. **Valore per il futuro**: la metodologia stessa (indicizzare bbox tipo
+   `0x00`/`0x06`/`0x16` fra edizioni diverse, filtrare per descriptor identico,
+   usare `difflib` con esclusione dei run a bassa varietà come oracolo) resta
+   valida e riutilizzabile per **qualunque** nuova ipotesi di codec — non solo
+   per LZSS. Se si trova o si ottiene una terza edizione, o se si estende la
+   scansione a `0x06`/`0x16`/`0x1E` (bbox anch'esse in chiaro, §7.4), la
+   probabilità di trovare una coppia CF diversa con contenuto *davvero*
+   invariato aumenta. Script di riferimento salvato in
+   `build/cross_iso_type0.pkl` (mappa bbox→(sector,length,cf) per entrambe le
+   immagini, tipo `0x00`).
+
+### 9.11 — **CODEC IDENTIFICATO** dal firmware originale (2026-09-15)
+
+`CF=1` **non è un codec a dizionario**. Non è LZ, non è Huffman, non è
+entropico. È un **impacchettamento a bit guidato dalla struttura del blocco**:
+ogni sezione ha un proprio decodificatore che ricostruisce record a dimensione
+fissa leggendo campi di larghezza minima da un bitstream MSB-first, e che
+converte **indici di record in offset assoluti** dentro il blocco decompresso.
+
+Questo spiega tutte le misure precedenti che sembravano contraddittorie:
+
+| osservazione | spiegazione |
+|---|---|
+| rapporto 1,33–2,65× soltanto | si risparmiano solo i bit alti dei campi, niente dizionario |
+| entropia 7,17–7,84 bit/byte | campi impacchettati a bit, nessuna ridondanza residua |
+| 8-grammi condivisi fra blocchi | stessi pattern di campo alla stessa fase di bit |
+| zero fughe di testo in chiaro | i nomi hanno un codificatore a prefisso dedicato |
+| ogni famiglia LZ/Huffman falsificata | erano tutte l'ipotesi sbagliata |
+
+#### 9.11.1 Dove sta il decoder
+
+| firmware | percorso nella ISO | modulo | CPU | DB-REL |
+|---|---|---|---|---|
+| CARIN CC-93 0560 | `/CC93_/0560/nav_sw_load` | `pbp` @ `0x58ed0` | m68k (OS-9/68K) | 14–17 |
+| Mk2C / Mk2M | `/Mk2C/0211/BMW/app_sw/bsw_load` | `pbp` @ `0x34130` | m68k (OS-9/68K) | 14–22 |
+| Mk3 | `/Mk3/0127/BMWC01S/app_sw/bsw_load` | `db_pub` @ `0x7d488` | **MIPS32 BE** (OS-9000) | ≥ 34 |
+| RR / V_2 | `/V_2/RR/0101/BMWC01S/app_sw/bsw2` | `db_pub` @ `0x917c8` | MIPS32 BE | ≥ 34 |
+
+Il decoder **non è** in `dbd`, `dbq` o `dbc` (quelli sono demone, query e
+cache). I moduli `Mk3`/`RR` marcati `usw_load` sono il lato MMI e non
+contengono il codec.
+
+**Firma univoca del codec** — la tabella dei caratteri del decoder di testo,
+42 byte, identica in tutti i firmware:
+
+```
+61 65 | 73 74 72 00 | 20 64 67 68 69 6c 6e 6f | e0 e1 … fd ac
+ a  e |  s  t  r NUL |  SP d  g  h  i  l  n  o | à á … ý ¬
+```
+
+Un codice a frequenza cucito addosso ai nomi di strada europei: `a`/`e` in
+1 bit, `s t r NUL` in 2, `SP d g h i l n o` in 3, le accentate Latin-1 in 7.
+Cercare questi 42 byte è il modo più rapido per trovare il codec in qualunque
+altro firmware (`scripts/fw_hunt_charmap.py`).
+
+#### 9.11.2 Primitive (offset del modulo `pbp` del CC-93)
+
+```
+0x3660  uncompressed_sectors(hdr)   bit 0 di hdr[6] -> hdr[7] altrimenti blockid&0xff
+0x3698  dispatch: se hdr[6]&1 -> init + switch su BLOCK_TYPE, altrimenti memcpy
+0x4798  init(src)        PTRBITS = bits_needed(usize * SECTOR)   [CC-93: SECTOR=2048]
+0x47da  copy_raw(dst,n)  memcpy dal cursore grezzo, cursore += n
+0x4800  copy_section(base, entry, recsize, plus1)
+0x49a8  bits_init()      base = cursore corrente, bitpos = 0
+0x49bc  getbits(n)       BFEXTU (a0){bitpos:n}  -> MSB-first
+0x4a68  bits_needed(n)   bit per rappresentare 0..n-1, aritmetica a 16 bit
+```
+
+`getbits` usa le istruzioni **bitfield del 68020** (`BFEXTU`, opcode `E9D0`).
+È il motivo per cui le sessioni precedenti non l'hanno vista: capstone in modo
+`CS_MODE_M68K_000` le rende come `.dc.w`. **Serve `CS_MODE_M68K_040`.**
+
+`PTRBITS` è la larghezza in bit di un puntatore interno al blocco:
+`ceil(log2(UNCOMPRESSED_SIZE * 512))`. Per un blocco da 10.752 B vale 14 —
+contro i 16 bit del campo decompresso. Da lì la compressione.
+
+#### 9.11.3 La `RECORD_SIZE_TABLE` del superblock parametrizza il decoder
+
+`pbp+0x3582` legge il superblock: descrittore a `+0x28` = `{u16 offset, u16 count}`,
+poi `count` coppie `{u16 id, u16 value}` che **sovrascrivono** i default cablati
+(`pbp+0x33ea`, estraibili con `scripts/cf1_defaults.py`). È esattamente la
+`RECORD_SIZE_TABLE` di §3.2. Nel firmware MIPS la stessa tabella è puntata da
+`-0x7900($gp)` con `campo(X) = T[(X-8)/2]`.
+
+Voci usate dal decoder del tipo `0x00` (default CC-93 → valore reale 21708):
+
+| id | ruolo | CC-93 | DB-REL 34 |
+|---|---|---:|---:|
+| `0x05` | offset del `SECTION_DESCRIPTOR` nel blocco | 8 | 8 |
+| `0x06` | record sezione 6 | 16 | 16 |
+| `0x08` | record sezione 4 | 28 | **32** |
+| `0x09` | offset dei campi di coda nel record della sezione 4 | 22 | **26** |
+| `0x0b` | lunghezza del prologo in chiaro | 108 | **116** |
+| `0x0c` | record sezione 7 | 6 | 6 |
+| `0x0f` | record sezione 9 (copiata verbatim) | 8 | 8 |
+| `0x10` | record sezione 5 | 8 | 8 |
+| `0x12` | record sezione 3 (verbatim, +1 record) | 4 | 4 |
+| `0x13` | record sezione 11 | 6 | 6 |
+| `0x14` | record sezione 10 (verbatim) | 8 | 8 |
+| `0x15` | record sezione 12 (verbatim) | 4 | **6** |
+| `0x40` | record sezioni 0,1,2 | 6 | **10** |
+
+Verificato su un blocco `CF=0` reale (settore 3169061, DB-REL 34): tutte le
+lunghezze di sezione tornano **esatte** con questi valori, incluso il record
+sentinella (`e3` = `(count+1)·4`, `e4` = `(count+1)·32`).
+
+#### 9.11.4 `decode_type00` — struttura
+
+```
+copy_raw(dst, T[0x0b])                       # prologo in chiaro (header+descr+bbox+service)
+PB_s2  = bits_needed(e2.count)               # descriptor[D+0x0a]
+PB_s4  = bits_needed(e4.count  + 1)          # [D+0x12]
+PB_s7  = bits_needed(e7.count  + 1)          # [D+0x1e]
+PB_s10 = bits_needed(e10.count + 1)          # [D+0x2a]
+PB_s11 = bits_needed(e11.count + 1)          # [D+0x2e]
+PB_s12 = bits_needed(e12.count + 1)          # [D+0x32]
+widths = copy_raw(2)                         # due larghezze adattive per blocco
+copy_section(e3,  T[0x12], plus1=True)       # sezioni copiate verbatim
+copy_section(e9,  T[0x0f])
+copy_section(e10, T[0x14])
+if e12.count: copy_section(e12, T[0x15])
+bits_init()                                  # da qui è bitstream
+dec_A(e0); dec_A(e1); dec_A(e2)
+dec_B(e4)                                    # + record sentinella in coda
+dec_C(e5); dec_D(e6); dec_E(e7)
+if e11.count: dec_F(e11)
+dec_text()
+```
+
+`dec_B` conferma il record sentinella di §9.5: il ciclo copre `count` record e
+poi scrive solo alcuni campi del record `count`.
+
+Codifica dei campi ricorrente:
+
+* **puntatore interno**: `off_sezione_bersaglio + getbits(PB_bersaglio) * recsize`
+  (indice di record, non offset) — con `indice == count` usato come `NULL`;
+* **offset pari**: `getbits(PTRBITS-1) << 1`;
+* **ereditarietà**: 1 bit di flag; se 0 il campo si copia dal record precedente
+  (in `dec_B` l'intero record parte come copia del precedente);
+* **coordinate** (`dec_C`/`dec_D`/`dec_E`): primo record assoluto a 16 bit, poi
+  `1 bit` → assoluto/delta, `1 bit` → segno, `getbits(widths[1])` per il modulo;
+* **cache di blocco**: due valori (puntatore a `e7` e a `e2`) inizializzati a 1
+  e riemessi finché un flag non li aggiorna.
+
+#### 9.11.5 Decoder di testo (`pbp+0x4862`)
+
+```
+start = getbits(PTRBITS);  end = getbits(PTRBITS)
+if start == 0 and end == 0: return
+dizionario = [ bytes(getbits(7) for _ in range(getbits(5))) for _ in range(6) ]
+p = start
+while p <= end:
+    code = getbits(2)
+    00 -> CHARMAP[getbits(1)]            # a e
+    01 -> CHARMAP[2 + getbits(2)]        # s t r NUL
+    10 -> CHARMAP[6 + getbits(3)]        # SP d g h i l n o
+    11 -> v = getbits(7)
+          v > 0x26  -> carattere letterale
+          v > 0x1b  -> voce del dizionario locale al blocco (v-0x21)
+          altrimenti-> CHARMAP[14 + v]   # accentate
+```
+
+Il blob dei nomi decodificato è l'**oracolo di validazione più forte
+disponibile**: sta in fondo al bitstream, quindi se esce testo leggibile tutto
+ciò che lo precede è stato decodificato correttamente.
+
+#### 9.11.6 Differenze DB-REL 34 e stato del port
+
+Il decoder m68k (CC-93 / Mk2C) **non basta** per i dischi DB-REL 34: i record
+sono cresciuti (`T[0x08]` 28→32, `T[0x40]` 6→10) e i campi in più non vengono
+scritti. Il decoder corretto è quello **MIPS di `db_pub`** (Mk3/RR), che ha la
+stessa struttura ma organizzata in **passate multiple**: ogni sezione viene
+percorsa più volte con un argomento `kind` (`0x14`, `0x15`, `0x17`) che
+seleziona il gruppo di campi da leggere. Sequenza di `decode_type00`
+(`db_pub+0x3d04`, Mk3 0127):
+
+```
+kind 0x14: dec_e0, dec_e1, dec_e2, dec_B, [dec_C/dec_D/dec_E inlined]
+kind 0x15: dec_e0, dec_B, ...
+kind 0x17: dec_e2, dec_e1, dec_e0
+if getbits(1): dec_text()      # due blob di testo, non uno
+```
+
+Campi verificati sul blocco `CF=0` reale (settore 3169061):
+
+* sezioni 0/1/2, record da 10 B: `+0,+2,+4` come nel CC-93; `+6` e `+8` sono
+  due puntatori a `e14` (`off + idx*4`), scritti nella passata `kind 0x17` come
+  `getbits(PTRBITS-1) << 1`;
+* sezione 4, record da 32 B: identica al CC-93 per `+0..+0x15`, `+0x1a/+0x1c/+0x1e`
+  (via `T[0x09]=26`); i nuovi `+0x16` (puntatore, vale `e13.off`) e `+0x18`
+  sono scritti nelle passate successive;
+* il descrittore del tipo `0x00` ha **15 voci** in DB-REL 34 (`e0..e14`),
+  contro le 13 usate dal CC-93; `e13`/`e14` sono le sezioni nuove.
+
+**Stato**: struttura completa e verificata; resta da trascrivere il corpo delle
+passate `0x15`/`0x17` e le inline di `dec_C/D/E` dal MIPS. Implementazione in
+`carin/parser/cf1.py` (per ora porta la variante CC-93, cioè la passata
+`0x14`), strumenti in `scripts/`:
+
+| script | funzione |
+|---|---|
+| `os9_modules.py` | enumera i moduli OS-9/OS-9000 (sync `4AFC` e `4DAD`) |
+| `m68k_dis.py` | disassembla m68k **in modo 68040** (serve per `BFEXTU`) |
+| `fw_xref.py` | xref delle stringhe costanti PC-relative |
+| `os9_data.py` | area dati statica e risoluzione dei riferimenti `a6` |
+| `cf1_defaults.py` | estrae la tabella di layout di default dal firmware |
+| `cf1_super.py` | estrae la `RECORD_SIZE_TABLE` dal superblock del disco |
+| `cf1_charmap.py` | estrae la tabella dei caratteri del decoder di testo |
+| `fw_hunt_charmap.py` | cerca il codec in tutti i file di una ISO firmware |
+| `fw_arch_detect.py` | indovina la CPU di un modulo |
+| `mips_dis.py`, `mips_graph.py`, `mips_func.py` | disassemblatore, grafo di chiamata e dump annotato per i moduli MIPS |
+| `cf1_layout_probe.py` | ispeziona blocchi `CF=0` reali per dedurre il layout |
+
+#### 9.11.7 Ipotesi da non riprendere
+
+`docs/agents/agente_pdf.md` afferma che `CF=1` sia LZSS a finestra 4096 con
+token a 16 bit e che `CF=2` sia gestito da zlib nel firmware m68k. **È falso su
+entrambi i punti**: il firmware CC-93 non contiene zlib (nessuna tabella
+`inflate` presente) e non confronta mai `COMPRESSION_FLAG` con 0/1/2 — testa
+`btst #0`. La sua unica prova è "la lunghezza combacia", già confutata in §9.9.1.
+
 ---
 
 ## 10. Toolchain
@@ -960,7 +1345,7 @@ python3 scripts/analyze_codec.py --type 0x1E --count 1
 | 1 | Sistema di coordinate | ✅ **RISOLTO** — `K = 2e9/360`, origine 30° O sull'equatore, rms 2,0 km su 38 ancore | — |
 | 2 | Record POI `0x06` e feature `0x16` | ✅ **RISOLTO** — 28 e 20 byte, scala locale 64 | — |
 | 3 | Bounding box per blocco | ✅ **RISOLTO** — `find_bbox`, 60/60 sui tipi georeferenziati | — |
-| 4 | `COMPRESSION_FLAG = 1` | ristretto: deterministico, byte-allineato, tabella statica; zlib/LZ4/LZW/LZSS/Huffman-ordine-0-globale esclusi; nessuna coppia chiaro/cifrato esiste sul disco (§9.6.1); layout di sezione di `0x1E` risolto (§9.5). **Non blocca il compilatore** | 🟠 alta |
+| 4 | `COMPRESSION_FLAG = 1` | ristretto: deterministico, byte-allineato, tabella statica; zlib/LZ4/LZW/LZSS/Huffman-ordine-0-globale/**aPLib** esclusi (§9.8); nessuna coppia chiaro/cifrato esiste sul disco (§9.6.1); nessuna tabella statica in `0x0D`/`0x18`/`0x1A`/`0x1B` (§9.8.3); layout di sezione di `0x1E` risolto (§9.5). **Confronto cross-edizione 21708/21734** (§9.10): stesso schema binario, 60 tile con CF diverso per la stessa bbox, nessuna byte-identica, e anche filtrando per descriptor identico (contenuto quasi-invariato) l'intera famiglia control-byte-LZSS resta al livello del rumore (~4%). Pista non esaurita: varint/gamma per-campo (§9.8.2); riestendere il confronto cross-edizione a `0x06`/`0x16`/`0x1E`. **Non blocca il compilatore** | 🟠 alta |
 | 5 | Semantica campi `0x0E` SECTION_0/1/2 (rete stradale) | struttura nota, semantica no | 🔴 critica |
 | 6 | Georeferenziazione dei parcel `0x0C`/`0x0E`/`0x10` (via `0x0D`/`0x0F`/`0x11`) | non risolta | 🔴 critica |
 | 7 | Mappa `BLOCK_TYPE → section_type[]` | non presente nei dati | 🟠 alta |
