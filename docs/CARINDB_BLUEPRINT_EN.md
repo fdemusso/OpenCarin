@@ -1,5 +1,11 @@
 # CarinDB Binary Blueprint
 
+> **📂 Agent-oriented split:** this monolith is also available as task-scoped parts
+> under [`docs/carindb/`](carindb/README.md) — architecture, geo, road network,
+> the CF=1 codec, falsified hypotheses, roadmap, and toolchain. Load the relevant
+> part instead of the whole file when working on a specific task. This document
+> remains the authoritative single source.
+
 > Analyzed media: `dataset/NAV_DB_21708.ISO` — BMW MK4 / CARiN, CD-ID 21708, compile date 2015-08-04.
 > All values are **Big-Endian**. Every statement in this document has been verified
 > against the dump; what has not been verified is marked `UNKNOWN` / `RESERVED`.
