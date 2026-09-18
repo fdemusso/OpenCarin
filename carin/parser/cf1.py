@@ -61,6 +61,12 @@ T_REC_S0 = 0x40         # record sezioni 0,1,2
 T_REC_S13 = 0x4C        # record sezione 13 (DB-REL >= 21)
 T_REC_S14 = 0x59        # record sezione 14 (DB-REL >= 23), indice dei nomi
 
+# --- indici RECORD_SIZE_TABLE specifici di BLOCK_TYPE 0x0E -------------------
+T_PROLOG_0E = 0x2B      # lunghezza del prologo (48 = 0x30)
+T_REC_S0_0E = 0x2D      # record sezione 0 (8 byte: ">HBBHH")
+T_REC_S1_0E = 0x41      # record sezione 1 (6 byte)
+T_REC_S2_0E = 0x42      # record sezione 2 (24 byte; metà ancora grezza, metà delta)
+
 
 class Cf1Error(RuntimeError):
     pass
@@ -510,7 +516,94 @@ def decode_type00(ctx: Cf1Context) -> None:
         dec_text(ctx)
 
 
-DECODERS = {0x00: decode_type00}
+def _dec_0e_s0(ctx: Cf1Context, e1: Entry, e2: Entry) -> None:
+    """pbp+0x40b0 — sezione 0 del tipo 0x0E (nodi/segmenti).
+
+    Verificato empiricamente su DB-REL 34 (0 S2-ptr errati su 1143 record S1):
+      getbits(ptrbits)           -> A        [+0 u16]
+      getbits(2)                 -> FLAGS lo [+2 bits 0-1]  (NB: annot. asm "$49e8=getbits(4)" errata)
+      getbits(1) << 4            -> FLAGS hi [+2 bit 4]
+      getbits(1)                 -> inherit bit
+        if 1:  getbits(3) -> B [+3 u8],  getbits(ptrbits) -> C [+4 u16]
+        if 0:  eredita B e C dal record precedente
+      getbits(bits_needed(e1.count)) -> D_idx
+             D = e1.off + D_idx * T[0x41]  [+6 u16]
+    """
+    pb = ctx.ptrbits
+    pb_s1 = bits_needed(e1.count)
+    s1_rec = ctx.T(T_REC_S1_0E)
+
+    for cur, prev, _first in _walk(ctx, 0, ctx.T(T_REC_S0_0E)):
+        ctx.w(cur + 0, ctx.g(pb))                        # A
+        flags_lo = ctx.g(2)
+        flags_hi = ctx.g(1) << 4
+        ctx.b(cur + 2, flags_lo | flags_hi)               # FLAGS
+        if ctx.g(1):                                      # inherit=1: leggi B e C
+            ctx.b(cur + 3, ctx.g(3))                      # B
+            ctx.w(cur + 4, ctx.g(pb))                     # C
+        elif prev >= 0:
+            ctx.b(cur + 3, ctx.dst[prev + 3])             # eredita B
+            ctx.w(cur + 4, ctx.rw(prev + 4))              # eredita C
+        d_idx = ctx.g(pb_s1)
+        ctx.w(cur + 6, e1.off + d_idx * s1_rec)           # D -> sezione 1
+
+
+def _dec_0e_s1(ctx: Cf1Context, e2: Entry) -> None:
+    """Sezione 1 del tipo 0x0E (archi/attributi) — da docs/carindb/03-road-network.md §6.3.1.
+
+    Record 6 byte (T[0x41]):
+      +0 u16: puntatore -> sezione 2  = e2.off + getbits(pb_s2) * T[0x42]
+      +2 u8:  count     = getbits(1) ? getbits(pb_s2) + 2 : 1
+      +3 u8:  flag      = getbits(1)
+      +4-5:   sconosciuti, lasciati a 0
+    """
+    pb_s2 = bits_needed(e2.count)
+    s1_rec = ctx.T(T_REC_S1_0E)
+    s2_rec = ctx.T(T_REC_S2_0E)
+
+    for cur, _prev, _first in _walk(ctx, 1, s1_rec):
+        s2_idx = ctx.g(pb_s2)
+        ctx.w(cur + 0, e2.off + s2_idx * s2_rec)          # ptr -> sezione 2
+        cnt = ctx.g(pb_s2) + 2 if ctx.g(1) else 1
+        ctx.b(cur + 2, cnt)                                # count
+        ctx.b(cur + 3, ctx.g(1))                           # flag
+
+
+def decode_type0E(ctx: Cf1Context) -> None:
+    """db_pub+0x1e98 — decoder BLOCK_TYPE 0x0E (parcella stradale, CF=1).
+
+    Pre-bitstream (raw, prima di bits_init — traccia da decode_modugno.py +
+    m68k pbp+0x4320):
+      T[0x2b]  byte di prologo   (header + descriptor + bbox + service = 48)
+      u16      count_N           (numero di ancore da 12 byte per la sezione 2)
+      count_N * 12  byte         (tabella ancore raw per la sezione 2)
+      1 byte   M_hi              (larghezza delta per la sezione 2, non usata qui)
+      1 byte   M_lo              (larghezza val2  per la sezione 2, non usata qui)
+
+    Bitstream MSB-first (dopo bits_init):
+      Sezione 0: nodi/segmenti     (_dec_0e_s0)
+      Sezione 1: archi/attributi   (_dec_0e_s1)
+
+    Sezione 2 (decode delta delle coordinate geometriche): fuori scope.
+    Le struct da 12 byte nel pre-header sono ancore di riferimento, non
+    record di sezione 2 diretti; il decode delta avviene nel bitstream e
+    non viene implementato qui.
+    """
+    ctx.copy_raw(0, ctx.T(T_PROLOG_0E))             # prologo
+    n_anc = struct.unpack_from(">H", ctx.copy_raw(-1, 2))[0]   # count_N
+    ctx.copy_raw(-1, n_anc * 12)                     # tabella ancore (non usata)
+    ctx.copy_raw(-1, 2)                              # M_hi, M_lo (non usati)
+
+    e1 = ctx.entry(1)
+    e2 = ctx.entry(2)
+
+    ctx.bits_init()
+
+    _dec_0e_s0(ctx, e1, e2)
+    _dec_0e_s1(ctx, e2)
+
+
+DECODERS = {0x00: decode_type00, 0x0E: decode_type0E}
 
 
 def decode_block(raw: bytes, table: dict[int, int], dbrel: int,

@@ -44,7 +44,7 @@
 0040fe: move.l     -$710c(a6), d0   ; ptrbits
 004102: bsr.w      $49bc            ; getbits(ptrbits) -> A
 004106: move.w     d0, (a3)         ; +0: u16
-004108: bsr.w      $49e8            ; getbits(4) -> FLAGS low
+004108: bsr.w      $49e8            ; getbits(2) -> FLAGS low  [annot. originale "getbits(4)" ERRATA: verificato empiricamente = 2 bit]
 00410c: move.b     d0, $2(a3)       ; +2: u8
 004110: bsr.w      $49d4            ; getbits(1) -> FLAGS hi
 004114: lsl.b      #$4, d0
@@ -52,7 +52,7 @@
 00411a: bsr.w      $49d4            ; getbits(1) -> Inherit bit
 00411e: tst.l      d0
 004120: beq.b      $4138            ; if 0, inherit B and C
-004122: bsr.w      $49fc            ; getbits(8) -> B
+004122: bsr.w      $49fc            ; getbits(3) -> B  [annot. originale "getbits(8)" ERRATA: verificato empiricamente = 3 bit]
 004126: move.b     d0, $3(a3)       ; +3: u8
 00412a: move.l     -$710c(a6), d0   ; ptrbits
 00412e: bsr.w      $49bc            ; getbits(ptrbits) -> C
