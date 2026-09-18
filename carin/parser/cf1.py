@@ -548,6 +548,70 @@ def _dec_0e_s0(ctx: Cf1Context, e1: Entry, e2: Entry) -> None:
         ctx.w(cur + 6, e1.off + d_idx * s1_rec)           # D -> sezione 1
 
 
+def _dec_0e_s2(ctx: Cf1Context, count_N: int, raw_12: bytes,
+               M_hi: int, M_lo: int) -> None:
+    """pbp — sezione 2 del tipo 0x0E (geometria delta, T[0x42]=24 byte).
+
+    Algoritmo (MSB-first, prosegue il bitstream di S0/S1):
+      idx_N_bits = bits_needed(count_N)
+      per ogni record:
+        idx_N      = getbits(idx_N_bits)
+        has_deltas = getbits(1)
+        if has_deltas:
+          per 4 campi: is_16=getbits(1); val=getbits(16 if is_16 else M_hi)
+        else:
+          4 x (0x7FFF, 16)  sentinella
+        val1 = getbits(13) << 1
+        val2 = getbits(M_lo)
+
+    Output per record 24 byte:
+      +0  i32 x1 = x_anc + sign_extend(dx1)
+      +4  i32 y1 = y_anc + sign_extend(dy1)
+      +8  i32 x2 = x_anc + sign_extend(dx2)
+      +12 i32 y2 = y_anc + sign_extend(dy2)
+      +16 u16 val1
+      +18 u16 val2
+      +20 u32 0 (campi residui sconosciuti)
+    """
+    e2 = ctx.entry(2)
+    idx_N_bits = bits_needed(count_N)
+    s2_rec = ctx.T(T_REC_S2_0E)
+
+    def sext(val: int, width: int) -> int:
+        if width > 0 and (val & (1 << (width - 1))):
+            return val - (1 << width)
+        return val
+
+    for i in range(e2.count):
+        base = e2.off + i * s2_rec
+        idx_N = ctx.g(idx_N_bits)
+        if idx_N < count_N:
+            x_anc, y_anc = struct.unpack_from(">ii", raw_12, idx_N * 12)
+        else:
+            x_anc, y_anc = 0, 0
+
+        if ctx.g(1):  # has_deltas
+            raw_d = []
+            for _ in range(4):
+                is_16 = ctx.g(1)
+                w = 16 if is_16 else M_hi
+                raw_d.append((ctx.g(w), w))
+        else:
+            raw_d = [(0x7FFF, 16)] * 4
+
+        val1 = ctx.g(13) << 1
+        val2 = ctx.g(M_lo)
+
+        x1 = x_anc + sext(raw_d[0][0], raw_d[0][1])
+        y1 = y_anc + sext(raw_d[1][0], raw_d[1][1])
+        x2 = x_anc + sext(raw_d[2][0], raw_d[2][1])
+        y2 = y_anc + sext(raw_d[3][0], raw_d[3][1])
+
+        struct.pack_into(">iiii", ctx.dst, base, x1, y1, x2, y2)
+        struct.pack_into(">HH", ctx.dst, base + 16, val1 & 0xFFFF, val2 & 0xFFFF)
+        # bytes 20-23: zero (already zero from bytearray init)
+
+
 def _dec_0e_s1(ctx: Cf1Context, e2: Entry) -> None:
     """Sezione 1 del tipo 0x0E (archi/attributi) — da docs/carindb/03-road-network.md §6.3.1.
 
@@ -577,22 +641,20 @@ def decode_type0E(ctx: Cf1Context) -> None:
       T[0x2b]  byte di prologo   (header + descriptor + bbox + service = 48)
       u16      count_N           (numero di ancore da 12 byte per la sezione 2)
       count_N * 12  byte         (tabella ancore raw per la sezione 2)
-      1 byte   M_hi              (larghezza delta per la sezione 2, non usata qui)
-      1 byte   M_lo              (larghezza val2  per la sezione 2, non usata qui)
+      1 byte   M_hi              (larghezza delta per la sezione 2)
+      1 byte   M_lo              (larghezza val2  per la sezione 2)
 
     Bitstream MSB-first (dopo bits_init):
       Sezione 0: nodi/segmenti     (_dec_0e_s0)
       Sezione 1: archi/attributi   (_dec_0e_s1)
 
-    Sezione 2 (decode delta delle coordinate geometriche): fuori scope.
-    Le struct da 12 byte nel pre-header sono ancore di riferimento, non
-    record di sezione 2 diretti; il decode delta avviene nel bitstream e
-    non viene implementato qui.
+    Sezione 2 (decode delta delle coordinate geometriche): _dec_0e_s2.
     """
-    ctx.copy_raw(0, ctx.T(T_PROLOG_0E))             # prologo
-    n_anc = struct.unpack_from(">H", ctx.copy_raw(-1, 2))[0]   # count_N
-    ctx.copy_raw(-1, n_anc * 12)                     # tabella ancore (non usata)
-    ctx.copy_raw(-1, 2)                              # M_hi, M_lo (non usati)
+    ctx.copy_raw(0, ctx.T(T_PROLOG_0E))
+    count_N = struct.unpack_from(">H", ctx.copy_raw(-1, 2))[0]
+    raw_12 = ctx.copy_raw(-1, count_N * 12)
+    mhi_mlo = ctx.copy_raw(-1, 2)
+    M_hi, M_lo = mhi_mlo[0], mhi_mlo[1]
 
     e1 = ctx.entry(1)
     e2 = ctx.entry(2)
@@ -601,6 +663,7 @@ def decode_type0E(ctx: Cf1Context) -> None:
 
     _dec_0e_s0(ctx, e1, e2)
     _dec_0e_s1(ctx, e2)
+    _dec_0e_s2(ctx, count_N, raw_12, M_hi, M_lo)
 
 
 DECODERS = {0x00: decode_type00, 0x0E: decode_type0E}

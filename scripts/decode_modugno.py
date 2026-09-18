@@ -3,6 +3,9 @@ import struct
 import json
 from pathlib import Path
 
+# TEST NON AFFIDABILE ATTENZIONE ORACLE NON CERTO
+
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from carin.parser.iso import CarinVolume, IsoImage, to_wgs84
 from carin.parser.cf1 import bits_needed, BitReader
@@ -17,19 +20,19 @@ def decode_0e(sector):
     vol = CarinVolume(IsoImage("dataset/NAV_DB_21708.ISO"))
     blk = vol.block(sector)
     src = blk.raw
-    
+
     sb = read_super("dataset/NAV_DB_21708.ISO", DEFAULT_DB0)
     tbl = layout_table(sb)
     desc_base = tbl[0x05]
-    
+
     def get_entry(idx):
         off, count = struct.unpack_from(">HH", src, desc_base + idx * 4)
         return {"off": off, "count": count}
-        
+
     e0 = get_entry(0)
     e1 = get_entry(1)
     e2 = get_entry(2)
-    
+
     # tbl[0x2b] = 48-byte plaintext prologue length for type 0x0E (see
     # CARINDB_BLUEPRINT_EN.md sec. 9). Firmware's copy_raw(a2, n=tbl[0x2b])
     # at pbp+0x432a already consumes the whole prologue; count_N follows
@@ -40,11 +43,11 @@ def decode_0e(sector):
     cursor += 2
     raw_12 = src[cursor : cursor + count_N * 12]
     cursor += count_N * 12
-    
+
     M_hi = src[cursor]
     M_lo = src[cursor+1]
     cursor += 2
-    
+
     bits = BitReader(src, cursor)
     # canonical header (cf1.decode_block): BLOCK_ID u32, BLOCK_TYPE u16,
     # COMPRESSION_FLAG @6, UNCOMPRESSED_SIZE @7 - the old ">HBBBBH" unpack
@@ -53,7 +56,7 @@ def decode_0e(sector):
     # sector (2048B), not the 512B SECTOR constant used elsewhere in cf1.py.
     usize = src[7]
     ptrbits = bits_needed(usize << 11)
-    
+
     for i in range(e0["count"]):
         A = bits.get(ptrbits)
         flags_low = bits.get(2)
@@ -82,7 +85,7 @@ def decode_0e(sector):
             count2 = 1
         flag = bits.get(1)
         s1_edges.append({"s2_idx": s2_idx, "count": count2})
-        
+
     s2_records = []
     idx_N_bits = bits_needed(count_N)
     for i in range(e2["count"]):
@@ -91,7 +94,7 @@ def decode_0e(sector):
             x_anc, y_anc = struct.unpack_from(">ii", raw_12, idx_N * 12)
         else:
             x_anc, y_anc = 0, 0
-            
+
         has_deltas = bits.get(1)
         deltas = []
         if has_deltas:
@@ -102,17 +105,17 @@ def decode_0e(sector):
                 deltas.append((val, width))
         else:
             deltas = [(0x7FFF, 16)] * 4
-            
+
         val1 = bits.get(13) << 1
         val2 = bits.get(M_lo)
-        
+
         s2_records.append({
             "x_anc": x_anc,
             "y_anc": y_anc,
             "deltas": deltas,
             "idx_N": idx_N
         })
-        
+
     return s1_edges, s2_records
 
 edges, s2_recs = decode_0e(2252227)

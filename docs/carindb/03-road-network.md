@@ -78,13 +78,13 @@ nor `0x04` (matrices). Thus **routing is NOT precalculated**: the firmware
 reconstructs the network hierarchy, valid paths, and turn costs at runtime from the
 base `0x0E` topology.
 
-**Layout of the CF=1 `0x0E` block** (✅ VERIFIED 2026-09-18, oracle 67/67 blocks):
+**Layout of the CF=1 `0x0E` block** (S0/S1 structure ✅ VERIFIED 2026-09-18, oracle 67/67 blocks; S2 algorithm ✅ implemented 2026-09-19, output layout ⚠️ proposed):
 - **Prologue**: `T[0x2b]` (48 bytes).
 - **Bitstream pre-header** (raw bytes, copied before `bits_init`):
   - 2 bytes: Count *N* (number of 12-byte anchor structs)
-  - *N* × 12 bytes: anchor table (reference points for Section 2 delta decode; NOT output)
-  - 1 byte: `M_hi` — delta field width for Section 2 (not used in S0/S1 decode)
-  - 1 byte: `M_lo` — val2 field width for Section 2 (not used in S0/S1 decode)
+  - *N* × 12 bytes: anchor table (reference points for Section 2 delta decode; NOT output to dst)
+  - 1 byte: `M_hi` — delta field width for Section 2
+  - 1 byte: `M_lo` — val2 field width for Section 2
 - **Section 0** (Nodes/Segments, `T[0x2d]` = 8 bytes):
   - `+0 (u16) A`: internal pointer, `getbits(ptrbits)` → Section 2 byte offset.
   - `+2 (u8) FLAGS`: `getbits(2)` bits 0–1, `getbits(1)<<4` bit 4. (**NB**: m68k asm annotation "getbits(4)" is wrong for DB-REL 34.)
@@ -97,11 +97,21 @@ base `0x0E` topology.
   - `+3 (u8)`: flag. `getbits(1)`.
   - `+4–5`: zero (not decoded).
 - **Section 2** (Geometry, `T[0x42]` = 24 bytes): delta-decoded from bitstream using
-  anchor table. `idx_N = getbits(bits_needed(N))` selects the anchor; delta fields use
-  `M_hi`/`M_lo` widths. **Out of scope** for structural S0/S1 decode; not implemented.
+  anchor table. Algorithm (verified via firmware ASM + `decode_modugno.py`):
+  - `idx_N = getbits(bits_needed(count_N))` → selects 12-byte anchor `(x_anc, y_anc i32 BE)`
+  - `has_deltas = getbits(1)`
+  - if `has_deltas`: for each of 4 fields: `is_16=getbits(1)`; `val=getbits(16 if is_16 else M_hi)`
+  - else: 4 × sentinel `(0x7FFF, width=16)` — no geometry
+  - `val1 = getbits(13) << 1`; `val2 = getbits(M_lo)`
+  - **Output byte layout (PROPOSED, awaiting firmware oracle)**: `+0 i32 x1`, `+4 i32 y1`,
+    `+8 i32 x2`, `+12 i32 y2` (absolute = anchor + sign_extended delta), `+16 u16 val1`,
+    `+18 u16 val2`, `+20..+23 unknown`.
+  - ⚠️ The output layout is derived from `decode_modugno.py` (circular oracle), not from
+    direct firmware write-trace. Must be re-verified against `pbp` S2 write instructions.
 
-> Implementation: `carin/parser/cf1.py` — `decode_type0E` + `_dec_0e_s0` + `_dec_0e_s1`.
-> Firmware listing: `docs/fw/pbp_0x0E_decoder.asm`. `0x0E` decoder at `db_pub+0x1e98`.
+> Implementation: `carin/parser/cf1.py` — `decode_type0E` + `_dec_0e_s0` + `_dec_0e_s1` + `_dec_0e_s2`.
+> Firmware listing: `docs/fw/pbp_0x0E_decoder.asm`. `0x0E` decoder entry at `pbp+0x4320`
+> (= `db_pub+0x1e98`). S2 write sequence NOT YET disassembled — see oracle objective below.
 
 ### 6.4 Type `0x04` (80,825 blocks) — 160-entry table
 
