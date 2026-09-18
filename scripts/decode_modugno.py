@@ -138,10 +138,14 @@ for edge in edges:
 
     coords = []
     if rec["idx_N"] < 159: # skip bad ones for drawing
-        lon, lat = to_wgs84(rec["x_anc"], rec["y_anc"])
-        coords.append([lon, lat])
-
         d = rec["deltas"]
+        # anchor is a shared coordinate-compression reference (159 anchors for
+        # 556 records, 94% of anchors within 3m of another anchor), not a
+        # rendered vertex. p1/p2 below are two independent anchor-relative
+        # points forming a 2-point chord; drawing anchor->p1->p2 as a 3-point
+        # chain (previous version) put a spurious kink at the anchor -
+        # turn-angle check across 236 real records: mean 131.7 deg, 48% >150
+        # deg (real roads don't fold back on themselves like that).
         if d[0][0] != 0x7FFF:
             dx1 = sign_extend(d[0][0], d[0][1])
             dy1 = sign_extend(d[1][0], d[1][1])
@@ -149,9 +153,8 @@ for edge in edges:
             dy2 = sign_extend(d[3][0], d[3][1])
 
             coords.append(list(to_wgs84(rec["x_anc"] + dx1, rec["y_anc"] + dy1)))
-            if dx2 != 0x7FFF and d[2][0] != 0x7FFF:
-                coords.append(list(to_wgs84(rec["x_anc"] + dx2, rec["y_anc"] + dy2)))
-                           
+            coords.append(list(to_wgs84(rec["x_anc"] + dx2, rec["y_anc"] + dy2)))
+
     if len(coords) > 1:
         features.append({
             "type": "Feature",
