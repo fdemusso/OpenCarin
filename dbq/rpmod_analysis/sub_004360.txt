@@ -1,0 +1,38 @@
+004360: 4e550000     link.w     a5, #$0
+004364: 48e7c0a0     movem.l    d0-d1/a0/a2, -(a7)
+004368: 2057         movea.l    (a7), a0
+00436a: 7000         moveq      #$0, d0
+00436c: 30280006     move.w     $6(a0), d0
+004370: d0af0004     add.l      $4(a7), d0
+004374: 2440         movea.l    d0, a2
+004376: 700f         moveq      #$f, d0
+004378: c02a0010     and.b      $10(a2), d0
+00437c: 7200         moveq      #$0, d1
+00437e: 1200         move.b     d0, d1
+004380: 0c010006     cmpi.b     #$6, d1
+004384: 6738         beq.b      $43be
+004386: 700f         moveq      #$f, d0
+004388: c02a0011     and.b      $11(a2), d0
+00438c: 7200         moveq      #$0, d1
+00438e: 1200         move.b     d0, d1
+004390: 0c010003     cmpi.b     #$3, d1
+004394: 6710         beq.b      $43a6
+004396: 700f         moveq      #$f, d0
+004398: c02a0011     and.b      $11(a2), d0
+00439c: 7200         moveq      #$0, d1
+00439e: 1200         move.b     d0, d1
+0043a0: 0c010004     cmpi.b     #$4, d1
+0043a4: 6614         bne.b      $43ba
+0043a6: 103c00f0     move.b     #$f0, d0
+0043aa: c02a0011     and.b      $11(a2), d0
+0043ae: 7200         moveq      #$0, d1
+0043b0: 1200         move.b     d0, d1
+0043b2: e889         lsr.l      #$4, d1
+0043b4: 0c010004     cmpi.b     #$4, d1
+0043b8: 6604         bne.b      $43be
+0043ba: 7001         moveq      #$1, d0
+0043bc: 6002         bra.b      $43c0
+0043be: 7000         moveq      #$0, d0
+0043c0: 4ced0500fff8 movem.l    -$8(a5), a0/a2
+0043c6: 4e5d         unlk       a5
+0043c8: 4e75         rts

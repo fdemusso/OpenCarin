@@ -1,0 +1,20 @@
+0007ea: 4e550000     link.w     a5, #$0
+0007ee: 48e7c000     movem.l    d0-d1, -(a7)
+0007f2: 61007fec     bsr.w      $87e0
+0007f6: 7201         moveq      #$1, d1
+0007f8: b280         cmp.l      d0, d1
+0007fa: 6720         beq.b      $81c
+0007fc: 202f0004     move.l     $4(a7), d0
+000800: 61aa         bsr.b      $7ac
+000802: 4a00         tst.b      d0
+000804: 6716         beq.b      $81c
+000806: 2217         move.l     (a7), d1
+000808: 20360170ffff908e move.l     $ffff908e(a6, invalid.w), d0
+000810: 4eae8c52     jsr        -$73ae(a6)
+000814: 4a00         tst.b      d0
+000816: 6704         beq.b      $81c
+000818: 7001         moveq      #$1, d0
+00081a: 6002         bra.b      $81e
+00081c: 7000         moveq      #$0, d0
+00081e: 4e5d         unlk       a5
+000820: 4e75         rts

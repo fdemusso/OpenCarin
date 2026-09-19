@@ -1,0 +1,20 @@
+0007ac: 4e550000     link.w     a5, #$0
+0007b0: 48e7c080     movem.l    d0-d1/a0, -(a7)
+0007b4: 4eae8c3a     jsr        -$73c6(a6)
+0007b8: 4a80         tst.l      d0
+0007ba: 670c         beq.b      $7c8
+0007bc: 4eae8c3a     jsr        -$73c6(a6)
+0007c0: 2040         movea.l    d0, a0
+0007c2: 4a280008     tst.b      $8(a0)
+0007c6: 6616         bne.b      $7de
+0007c8: 2217         move.l     (a7), d1
+0007ca: 20360170ffff908a move.l     $ffff908a(a6, invalid.w), d0
+0007d2: 4eae8c52     jsr        -$73ae(a6)
+0007d6: 4a00         tst.b      d0
+0007d8: 6704         beq.b      $7de
+0007da: 7001         moveq      #$1, d0
+0007dc: 6002         bra.b      $7e0
+0007de: 7000         moveq      #$0, d0
+0007e0: 4ced0102fff8 movem.l    -$8(a5), d1/a0
+0007e6: 4e5d         unlk       a5
+0007e8: 4e75         rts

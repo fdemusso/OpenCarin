@@ -1,0 +1,5 @@
+0087e0: 4e550000     link.w     a5, #$0
+0087e4: 48e78000     movem.l    d0, -(a7)
+0087e8: 20360170ffffc130 move.l     $ffffc130(a6, invalid.w), d0
+0087f0: 4e5d         unlk       a5
+0087f2: 4e75         rts
