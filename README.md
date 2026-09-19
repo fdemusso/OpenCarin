@@ -31,6 +31,7 @@ We have made major progress on the binary format. Every technical finding below 
 * ✅ **`COMPRESSION_FLAG = 1` Cracked (September 2026)**:
   Covering 30% of all disc blocks (96,011 blocks), this was **not a dictionary compression codec** (all LZ/Huffman variants had failed). By reverse-engineering navigation unit firmware (`pbp` in m68k CC-93, `db_pub` in MIPS32 Mk3/RR), we discovered it is **structure-driven bit-packing** parameterized by the superblock's `RECORD_SIZE_TABLE`.
   * Fully decoded 1,200/1,200 type `0x00` blocks, verified against actual European road networks (El Hierro, Algarve, Alentejo).
+  * Fully decoded type `0x0E` (road parcels, 74,247 blocks): S0/S1 verified 2026-09-18; Section 2 geometry layout verified 2026-09-19 via m68k firmware write trace (`pbp+0x41c0`). The 24-byte S2 record stores raw anchor coordinates + raw compressed deltas; the routing engine applies sign-extension at query time. 0/133 bad anchor indices on sector 2252227.
 
 ---
 
@@ -48,8 +49,8 @@ While the foundation is cracked, building a full compiler from OpenStreetMap req
 * Unlike POI (`0x06`) and feature (`0x16`) blocks, road network parcels (`0x0E`) and street name parcels (`0x10`) have no explicit bounding box in their headers.
 * They are indexed hierarchically through index blocks (`0x0D`, `0x0F`, `0x11`). We need to document the exact lookup chain from coordinate / region to parcel block.
 
-### 3. Decoder Ports for Types `0x0E`, `0x14`–`0x16` 🟠 High
-* Port the bit-packing decoder logic from MIPS firmware (`db_pub`) for the remaining block types into Python (`carin/parser/cf1.py`).
+### 3. Decoder Ports for Types `0x14`–`0x16` 🟠 High
+* Port the bit-packing decoder logic from MIPS firmware (`db_pub`) for the remaining block types into Python (`carin/parser/cf1.py`). Type `0x0E` is fully ported and verified (2026-09-19).
 
 ### 4. OpenStreetMap to CARiN Serializer & ISO Compiler 🟡 Ongoing
 * Pipeline to parse OSM PBF data (`osmium`), partition nodes/ways into 512-byte sector-aligned parcels, compute coordinate transforms, write CARiN block headers, and package a bootable ISO 9660 filesystem.

@@ -1,8 +1,9 @@
 # Part 3 — Road Network Tables (Parcels)
 
-> **Status: ⚠️ PARTIAL.** Block/section *structure* is known and empirically
-> verified; **field semantics are largely UNKNOWN** and must not be assumed.
-> These types hold 2.9 GB of the 3.3 GB DB and are the current critical frontier.
+> **Status: ✅ VERIFIED (STEP 2 & 3 complete, 2026-09-19).** Block/section structure
+> AND field semantics for `0x0E` are fully verified from firmware traces. Spatial
+> lookup via `find_parcel(vol, X, Y)` oracle 10/10 PASS. `0x0D`/`0x0F`/`0x11` = TEXT
+> address-lookup index (not spatial). Types `0x00`–`0x03` field semantics still UNKNOWN.
 >
 > Source: `../CARINDB_BLUEPRINT_EN.md` §6. Related: CF=1 decoding for these types →
 > [`04-cf1-codec.md`](04-cf1-codec.md); open goals → [`06-objectives-roadmap.md`](06-objectives-roadmap.md).
@@ -78,7 +79,7 @@ nor `0x04` (matrices). Thus **routing is NOT precalculated**: the firmware
 reconstructs the network hierarchy, valid paths, and turn costs at runtime from the
 base `0x0E` topology.
 
-**Layout of the CF=1 `0x0E` block** (S0/S1 structure ✅ VERIFIED 2026-09-18, oracle 67/67 blocks; S2 algorithm ✅ implemented 2026-09-19, output layout ⚠️ proposed):
+**Layout of the CF=1 `0x0E` block** (S0/S1 structure ✅ VERIFIED 2026-09-18, oracle 67/67 blocks; S2 ✅ VERIFIED 2026-09-19, oracle: pbp m68k write trace `pbp+0x41c0`):
 - **Prologue**: `T[0x2b]` (48 bytes).
 - **Bitstream pre-header** (raw bytes, copied before `bits_init`):
   - 2 bytes: Count *N* (number of 12-byte anchor structs)
@@ -97,21 +98,65 @@ base `0x0E` topology.
   - `+3 (u8)`: flag. `getbits(1)`.
   - `+4–5`: zero (not decoded).
 - **Section 2** (Geometry, `T[0x42]` = 24 bytes): delta-decoded from bitstream using
-  anchor table. Algorithm (verified via firmware ASM + `decode_modugno.py`):
-  - `idx_N = getbits(bits_needed(count_N))` → selects 12-byte anchor `(x_anc, y_anc i32 BE)`
+  anchor table. Algorithm (✅ VERIFIED 2026-09-19, oracle: pbp m68k write trace — `pbp+0x41c0`):
+  - `idx_N = getbits(bits_needed(count_N))` → selects 12-byte anchor
   - `has_deltas = getbits(1)`
   - if `has_deltas`: for each of 4 fields: `is_16=getbits(1)`; `val=getbits(16 if is_16 else M_hi)`
-  - else: 4 × sentinel `(0x7FFF, width=16)` — no geometry
+  - else: 4 × sentinel `0x7FFF` — no geometry
   - `val1 = getbits(13) << 1`; `val2 = getbits(M_lo)`
-  - **Output byte layout (PROPOSED, awaiting firmware oracle)**: `+0 i32 x1`, `+4 i32 y1`,
-    `+8 i32 x2`, `+12 i32 y2` (absolute = anchor + sign_extended delta), `+16 u16 val1`,
-    `+18 u16 val2`, `+20..+23 unknown`.
-  - ⚠️ The output layout is derived from `decode_modugno.py` (circular oracle), not from
-    direct firmware write-trace. Must be re-verified against `pbp` S2 write instructions.
+  - **Output byte layout** (✅ VERIFIED 2026-09-19, oracle: pbp m68k write trace):
+
+    | offset | size | content |
+    |--------|------|---------|
+    | `+0`   | i32  | `x_anc` — anchor bytes 0-3 (raw copy, `memmove pbp+0x41d4`) |
+    | `+4`   | i32  | `y_anc` — anchor bytes 4-7 (raw copy) |
+    | `+8`   | u16  | `raw_delta[0]` — unsigned, width = `is_16?16:M_hi` |
+    | `+10`  | u16  | `raw_delta[1]` |
+    | `+12`  | u16  | `raw_delta[2]` |
+    | `+14`  | u16  | `raw_delta[3]` |
+    | `+16`  | i32  | `anchor_f2` — anchor bytes 8-11 (raw copy, `memmove pbp+0x41ee`) |
+    | `+20`  | u16  | `val1 = getbits(13) << 1` |
+    | `+22`  | u16  | `val2 = getbits(M_lo)` |
+
+  - **Note**: the firmware stores raw anchor + raw compressed deltas — it does NOT
+    pre-compute absolute coordinates. The routing engine applies sign-extension and
+    anchor+delta at query time. The `is_16` flag is consumed from the bitstream but NOT
+    stored in the record; M_hi (from the block pre-header) is needed to interpret
+    `raw_delta[k]` when `is_16=0`.
 
 > Implementation: `carin/parser/cf1.py` — `decode_type0E` + `_dec_0e_s0` + `_dec_0e_s1` + `_dec_0e_s2`.
 > Firmware listing: `docs/fw/pbp_0x0E_decoder.asm`. `0x0E` decoder entry at `pbp+0x4320`
-> (= `db_pub+0x1e98`). S2 write sequence NOT YET disassembled — see oracle objective below.
+> (= `db_pub+0x1e98`). Common section loop `pbp+0x40b0`; S2 handler `pbp+0x41c0`; `$694e` = memmove.
+
+### 6.3.2 Types `0x0D` / `0x0F` / `0x11` — TEXT address-lookup index (NOT spatial)
+
+**Discovery 2026-09-19** (STEP 3): these blocks were initially suspected to be a geographic
+R-tree for parcel lookup. They are in fact an **alphabetical address index**.
+
+Each block holds an array of **12-byte records** with identical layout:
+
+```
+  Offset  Size  Field  Content
+  +0x00   u32   A      BLOCK_ID of target block (0x0C / 0x0E / 0x10 depending on type)
+  +0x04   u8    B_hi   ASCII code — country / street-type code (e.g. 0x61='a'=Albania)
+  +0x05   u8    B_lo   always 0x01
+  +0x06   u16   C      byte offset into target block's S0 section
+  +0x08   u16   D      record count in that range
+  +0x0A   u16   E      always 0x0000 (padding)
+```
+
+Hierarchy and block counts:
+
+| Type | Blocks | Target type | Semantics |
+|------|--------|-------------|-----------|
+| `0x0D` | 10 | `0x0C` | Country/language codes → record ranges in `0x0C` S0 |
+| `0x0F` | 1,661 | `0x0E` | Street-name codes → record ranges in `0x0E` S0 |
+| `0x11` | 921 | `0x10` | Street-name codes → record ranges in `0x10` S1 |
+
+The `B_hi` code is an ASCII initial: the first `0x0E` block referenced (sector 235755)
+is in Albania because 'a' is the first letter alphabetically. **This is address-lookup by
+street name, not geographic proximity**. Do NOT use `0x0D`/`0x0F`/`0x11` for spatial
+parcel lookup — use `scripts/find_parcel.py` instead (index from S2 `x_anc`/`y_anc`).
 
 ### 6.4 Type `0x04` (80,825 blocks) — 160-entry table
 

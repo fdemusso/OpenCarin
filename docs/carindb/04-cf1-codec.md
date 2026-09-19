@@ -291,6 +291,15 @@ Type `0x0E` oracle (2026-09-18): 67/67 CF=1 blocks pass structural validation
 `$49e8`/`$49fc` were annotated as getbits(4)/getbits(8) but DB-REL 34 uses
 **2 bits** (FLAGS_lo) and **3 bits** (B). See `docs/carindb/03-road-network.md` §6.3.1.
 
+Type `0x0E` Section 2 oracle (2026-09-19): ground-truth write trace from m68k firmware
+(`pbp+0x41c0`). The 24-byte record stores **raw anchor + raw deltas** — not pre-computed
+coordinates. Layout: `+0` i32 x_anc; `+4` i32 y_anc; `+8..+14` 4×u16 raw_delta[0..3]
+(width = `is_16?16:M_hi`, `is_16` consumed from bitstream but NOT stored); `+16` i32
+anchor_f2 (anchor bytes 8–11, previously missing); `+20` u16 val1 = `getbits(13)<<1`;
+`+22` u16 val2 = `getbits(M_lo)`. End-to-end check sector 2252227: 0/133 bad anchor
+indices, 556/556 non-zero val1/val2. See `docs/carindb/03-road-network.md` §6.3.1 for
+full verified layout table and `docs/fw/pbp_0x0E_decoder.asm` for write trace.
+
 ## 9.11.9 Hypotheses NOT to revisit
 
 `docs/agents/agente_pdf.md` claims `CF=1` is LZSS (4096 window, 16-bit tokens) and

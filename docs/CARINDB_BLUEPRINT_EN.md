@@ -579,28 +579,46 @@ PARCEL_S0_FMT = ">HBBHH"        # 8 bytes
 
 **Layout**: 
 - **Prologue**: `T[0x2b]` (48 bytes).
-- **Bitstream Pre-header**: The compressed stream starts at byte 48. Before `bits_init` is called, it copies raw bytes:
-  - 1 byte (UNKNOWN)
-  - 1 byte (UNKNOWN)
-  - 2 bytes: Count $N$
-  - $N \times 12$ bytes: Array of raw 12-byte structs (Source for Section 2 geometries)
-  - 2 bytes: Count $M$
-  - $M \times 1$ bytes: Array of 1-byte elements
-- **Section 0** (Nodes/Segments, `T[0x2d]` = 8 bytes):
-  - `+0 (u16)` `A`: Internal pointer, `getbits(ptrbits)`. Pointer to Section 2 (the 12-byte array).
-  - `+2 (u8)` `FLAGS`: Digitization/One-way. `getbits(4)` for bits 0..3, and `getbits(1) << 4` for bit 4.
-  - `+3 (u8)` `B`: Hierarchy/Road Class. If `getbits(1)` is 1, `getbits(8)`, else inherit. (UNKNOWN exact mapping).
-  - `+4 (u16)` `C`: Aux pointer. If the same `getbits(1)` is 1, `getbits(ptrbits)`, else inherit.
-  - `+6 (u16)` `D`: Pointer to Section 1. `getbits(bits_needed(S1_count)) \times S1_{recsize} + S1_{offset}`.
-- **Section 1** (Edges/Attributes, `T[0x41]` = 6 bytes):
-  - `+0 (u16)`: Pointer to Section 2. `getbits(bits_needed(S2_count)) \times S2_{recsize} + S2_{offset}`.
-  - `+2 (u8)`: Count/Delta. If `getbits(1)` is 1, `getbits(bits_needed(S2_count)) + 2`. Else `1`.
-  - `+3 (u8)`: Flag. `getbits(1)`.
-  - (Bytes 4 and 5 are UNKNOWN/padding).
-- **Section 2** (Geometry/Border Nodes, `T[0x42]` = 24 bytes):
-  - Reconstructed by copying elements from the $N \times 12$ byte raw array in the bitstream pre-header. Exact layout UNKNOWN.
+- **Bitstream Pre-header** (raw bytes, copied before `bits_init` — ✅ VERIFIED 2026-09-18):
+  - 2 bytes: Count $N$ (number of 12-byte anchor structs)
+  - $N \times 12$ bytes: anchor table (reference points for Section 2 delta decode; NOT output to dst)
+  - 1 byte: `M_hi` — delta field width for Section 2
+  - 1 byte: `M_lo` — val2 field width for Section 2
+- **Section 0** (Nodes/Segments, `T[0x2d]` = 8 bytes — ✅ VERIFIED 2026-09-18):
+  - `+0 (u16)` `A`: `getbits(ptrbits)` → Section 2 byte offset.
+  - `+2 (u8)` `FLAGS`: `getbits(2)` bits 0–1; `getbits(1)<<4` bit 4. (**NB**: original m68k annotation "getbits(4)" is wrong for DB-REL 34.)
+  - `+3 (u8)` `B`: If `getbits(1)`==1 → `getbits(3)`, else inherit from previous record. (**NB**: original annotation "getbits(8)" is wrong for DB-REL 34.)
+  - `+4 (u16)` `C`: If same `getbits(1)`==1 → `getbits(ptrbits)`, else inherit.
+  - `+6 (u16)` `D`: Pointer to Section 1. `getbits(bits_needed(S1_count)) × T[0x41] + S1_offset`.
+- **Section 1** (Edges/Attributes, `T[0x41]` = 6 bytes — ✅ VERIFIED 2026-09-18):
+  - `+0 (u16)`: Pointer to Section 2. `getbits(bits_needed(S2_count)) × T[0x42] + S2_offset`.
+  - `+2 (u8)`: If `getbits(1)`==1 → `getbits(bits_needed(S2_count)) + 2`, else `1`.
+  - `+3 (u8)`: `getbits(1)`.
+  - `+4–5`: zero (not decoded).
+- **Section 2** (Geometry, `T[0x42]` = 24 bytes — ✅ VERIFIED 2026-09-19, oracle: pbp m68k write trace `pbp+0x41c0`):
+  - `idx_N = getbits(bits_needed(count_N))` → selects 12-byte anchor
+  - `has_deltas = getbits(1)`
+  - if `has_deltas`: for each of 4 fields: `is_16=getbits(1)`; `val=getbits(16 if is_16 else M_hi)`
+  - else: 4 × sentinel `0x7FFF`
+  - `val1 = getbits(13) << 1`; `val2 = getbits(M_lo)`
+  - **Output byte layout**:
 
-*(Note: Coordinate delta decoding is still UNKNOWN and requires further analysis of the $12$-byte array).*
+    | offset | size | content |
+    |--------|------|---------|
+    | `+0`   | i32  | `x_anc` — anchor bytes 0-3 (raw copy) |
+    | `+4`   | i32  | `y_anc` — anchor bytes 4-7 (raw copy) |
+    | `+8`   | u16  | `raw_delta[0]` — unsigned, width = `is_16?16:M_hi` |
+    | `+10`  | u16  | `raw_delta[1]` |
+    | `+12`  | u16  | `raw_delta[2]` |
+    | `+14`  | u16  | `raw_delta[3]` |
+    | `+16`  | i32  | `anchor_f2` — anchor bytes 8-11 (raw copy) |
+    | `+20`  | u16  | `val1 = getbits(13) << 1` |
+    | `+22`  | u16  | `val2 = getbits(M_lo)` |
+
+  - **Note**: firmware stores raw anchor + raw compressed deltas. The routing engine
+    applies sign-extension and `anchor+delta` at query time. The `is_16` flag is consumed
+    from the bitstream but NOT stored in the record; `M_hi` is needed to interpret
+    `raw_delta[k]` when `is_16=0`.
 
 ### 6.4 Type `0x04` (80,825 blocks) — 160-Entry Table
 
@@ -1424,9 +1442,10 @@ prologue, verbatim sections, and bit-packed decoding of sections 0, 1, 2, 4, 5, 
 7, and 11 are byte-for-byte exact. Cross-verification with bbox (§7)
 rules out any coincidence: names correspond to the geographic tile of the block.
 
-**Status**: type `0x00` **resolved**. Remaining to be ported are types `0x0E`
-(`db_pub+0x1e98`) and `0x14`/`0x15`/`0x16` (`db_pub+0x2a7c`), which share
-the same structure but with a different set of sections. Implementation in
+**Status**: types `0x00` and `0x0E` **resolved**. Type `0x0E` S2 layout verified
+2026-09-19 via m68k write trace (`pbp+0x41c0`); see `docs/carindb/03-road-network.md`
+§6.3.1. Remaining to be ported are types `0x14`/`0x15`/`0x16` (`db_pub+0x2a7c`),
+which share the same structure but with a different set of sections. Implementation in
 `carin/parser/cf1.py`, tools in `scripts/`:
 
 | Script | Function |
@@ -1484,9 +1503,9 @@ python3 scripts/analyze_codec.py --type 0x1E --count 1
 | 1 | Coordinate system | ✅ **RESOLVED** — `K = 2e9/360`, origin 30° W on the equator, rms 2.0 km across 38 anchors | — |
 | 2 | POI `0x06` and feature `0x16` records | ✅ **RESOLVED** — 28 and 20 bytes, local scale 64 | — |
 | 3 | Bounding box per block | ✅ **RESOLVED** — `find_bbox`, 60/60 on georeferenced types | — |
-| 4 | `COMPRESSION_FLAG = 1` | ✅ **RESOLVED for type `0x00`** — not a dictionary codec but structure-driven bit-packing parameterized by the superblock's `RECORD_SIZE_TABLE`; decoder found in original firmware (§9.11). 1,200/1,200 `CF=1` blocks of type `0x00` decoded with readable name blob consistent with bbox. Remaining types `0x0E` and `0x14`–`0x16`, same structure, different sections | 🟠 high |
-| 5 | Field semantics in `0x0E` SECTION_0/1/2 (road network) | structure known, semantics unknown | 🔴 critical |
-| 6 | Georeferencing of parcels `0x0C`/`0x0E`/`0x10` (via `0x0D`/`0x0F`/`0x11`) | unresolved | 🔴 critical |
+| 4 | `COMPRESSION_FLAG = 1` | ✅ **RESOLVED** — structure-driven bit-packing parameterized by superblock `RECORD_SIZE_TABLE`; decoder verified for `0x00`, `0x0E`, `0x14`–`0x16`. 1,200/1,200 `CF=1` type `0x00`; oracle 10/10 `0x16` CF=1 (1958 geo records); oracle 10/10 `0x0E` CF=1 S0/S1/S2. Firmware listing: `docs/fw/pbp_0x0E_decoder.asm`. | — |
+| 5 | Field semantics in `0x0E` SECTION_0/1/2 (road network) | ✅ **RESOLVED** — A=arc ptr (S2 byte offset), FLAGS bits 0–1/4=direction, B=functional class, C=cross-parcel ref (0 in 0x0E), D=ptr→S1; S2 = delta-decoded geometry (x_anc/y_anc absolute, raw deltas, val1/val2). Oracle 15/15 blocks. See `docs/carindb/03-road-network.md §6.3.1`. | — |
+| 6 | Georeferencing of parcels `0x0C`/`0x0E`/`0x10` (via `0x0D`/`0x0F`/`0x11`) | ✅ **RESOLVED** — `find_parcel(vol, X, Y) → sector` oracle 10/10 PASS 2026-09-19. Spatial index built from S2 `x_anc`/`y_anc`; cached in `dataset/parcel_index.npz`. **Key**: `0x0D`/`0x0F`/`0x11` are TEXT address-lookup indices (ASCII street/country codes → parcel record ranges), NOT geographic R-trees. See `scripts/find_parcel.py`. | — |
 | 7 | Mapping `BLOCK_TYPE → section_type[]` | not present in data | 🟠 high |
 | 8 | Resolution of `NAME_PTR` high16 (country table) | 6 unidentified segments | 🟡 medium |
 | 9 | Order/role of the 5 `u16` in type `0x04` | UNKNOWN | 🟡 medium |
