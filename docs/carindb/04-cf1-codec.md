@@ -1,7 +1,8 @@
 # Part 4 — `COMPRESSION_FLAG = 1` Codec — RESOLVED
 
-> **Status: ✅ RESOLVED for block types `0x00` and `0x0E`** (2026-09-18). Remaining ports:
-> `0x14`/`0x15`/`0x16` (same structure, different sections).
+> **Status: ✅ RESOLVED — decoder and serializer complete** (2026-09-19).
+> Block types `0x00`, `0x0E`, `0x14`/`0x15`/`0x16` decoded; `0x0E` CF=1 serializer
+> (`encode_type0E`) oracle 10/10 PASS. No remaining ports needed for routing.
 > For the exhaustive list of *falsified* codec hypotheses (do not re-attempt),
 > read [`05-failed-attempts.md`](05-failed-attempts.md) **before** trying anything here.
 >
@@ -283,8 +284,10 @@ The oracle is **content**, not length: real text implies prologue, verbatim
 sections, and bit-packed decoding of sections 0,1,2,4,5,6,7,11 are byte-exact.
 Cross-check with bbox rules out coincidence.
 
-**Status**: types `0x00` and `0x0E` **resolved**. Remaining to port: `0x14`/`0x15`/`0x16`
-(`db_pub+0x2a7c`) — same structure, different section sets.
+**Status**: all routing-relevant block types **resolved**.
+- `0x00` (map drawing): decoder verified on 1,200 blocks (1,200/1,200 readable names).
+- `0x0E` (road parcels): decoder + **encoder** (`encode_type0E`) — round-trip oracle 10/10 PASS 2026-09-19.
+- `0x14`/`0x15`/`0x16` (geo labels): decoder verified 2026-09-19, 1,958/1,958 records with X/Y in European range.
 
 Type `0x0E` oracle (2026-09-18): 67/67 CF=1 blocks pass structural validation
 (bad_D=0, bad_S2ptr=0) across usize 7–96. Key finding: m68k asm subroutines at
@@ -300,7 +303,34 @@ anchor_f2 (anchor bytes 8–11, previously missing); `+20` u16 val1 = `getbits(1
 indices, 556/556 non-zero val1/val2. See `docs/carindb/03-road-network.md` §6.3.1 for
 full verified layout table and `docs/fw/pbp_0x0E_decoder.asm` for write trace.
 
-## 9.11.9 Hypotheses NOT to revisit
+## 9.11.9 `encode_type0E` — CF=1 serializer (STEP 4, ✅ 2026-09-19)
+
+`carin/parser/cf1.py` — `encode_type0E(decoded, table, dbrel) → bytes`.
+
+**Algorithm** (inverse of `decode_type0E`):
+
+1. Read section entries `e0/e1/e2` from `decoded[table[T_DESC_BASE]…]`.
+2. **Anchor table**: scan all S2 records, collect unique 12-byte signatures
+   (`decoded[base:base+8] + decoded[base+16:base+20]`) in first-appearance order
+   → `count_N` anchors → `raw_12`.
+3. **M_hi**: `max(1, bits_needed(max_non_sentinel_delta + 1))` across all
+   `has_deltas=True` S2 records. Sentinel detection: all 4 deltas == `0x7FFF`.
+4. **M_lo**: `max(1, bits_needed(max_val2 + 1))` across all S2 records.
+5. `BitWriter` (MSB-first, inverse of `BitReader`): encode S0, S1, S2 bitstream.
+6. Assemble: `prolog` (CF restored to 1, usize from `len(decoded)//512`) +
+   `pre_hdr` (count_N u16 + raw_12 + M_hi + M_lo) + bitstream + padding to
+   sector boundary. Fix `block_id` sector field; update length-in-sectors.
+
+**Round-trip guarantee**: `decode_block(encode_type0E(dec, t, r), t, r)[4:] == dec[4:]`
+(bytes 0–3 = block_id legitimately differ if encoded size changes; bytes 4–7 =
+btype/cf/usize are identical after decode_block zeroes cf and usize).
+
+**Oracle**: `scripts/oracle_encode_0e.py` — 10/10 CF=1 `0x0E` blocks, PASS.
+Re-encoded blocks are 30–40% smaller than originals because M_hi/M_lo are derived
+from the actual data distribution, whereas the original encoder used conservative
+fixed widths.
+
+## 9.11.10 Hypotheses NOT to revisit
 
 `docs/agents/agente_pdf.md` claims `CF=1` is LZSS (4096 window, 16-bit tokens) and
 `CF=2` is zlib handled in m68k firmware. **False on both counts**: CC-93 firmware

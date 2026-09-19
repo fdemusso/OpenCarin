@@ -14,7 +14,7 @@
 | `carin/parser/iso.py` | ISO 9660 reader (no mount), `CarinVolume` over `DB_0+DB_1` space, `CarinBlock`, `find_bbox`, `to_wgs84`/`to_carin` |
 | `carin/parser/calibration.py` | `GeographicCalibrator` (Levenberg-Marquardt + grid search) |
 | `carin/parser/compression.py` | `CompressionAnalyzer`, `LzssSweep`, `sweep_lzss`, `decode_lzw`, `decode_lz4_block`, `entropy`, `plain_prefix`, `score_output` |
-| `carin/parser/cf1.py` | **CF=1 bit-packing decoder** (`decode_block`), parameterized by `RECORD_SIZE_TABLE` — see [`04-cf1-codec.md`](04-cf1-codec.md) |
+| `carin/parser/cf1.py` | **CF=1 bit-packing codec** — `decode_block` (all routing types), `encode_type0E` (STEP 4 serializer, oracle 10/10 PASS), `BitWriter`; parameterized by `RECORD_SIZE_TABLE` — see [`04-cf1-codec.md`](04-cf1-codec.md) |
 
 ## Analysis & extraction scripts (`scripts/`)
 
@@ -47,7 +47,7 @@
 | `cf1_validate.py` | structural + text oracles on selected blocks |
 | `cf1_sweep.py` | batch decodes, reports success rate (1,200/1,200 on type `0x00`) |
 
-### Road-network oracles (STEP 2 & 3)
+### Road-network oracles (STEP 2, 3 & 4)
 | Script | Function |
 |---|---|
 | `oracle_0e.py` | STEP 2 oracle — S0/S1/S2 structural invariants on `0x0E` CF=1 blocks; 10/10 PASS |
@@ -55,6 +55,7 @@
 | `oracle_14_16.py` | STEP 1 oracle — X/Y geographic range on `0x16` CF=1 blocks; 1958/1958 PASS |
 | `find_parcel.py` | **STEP 3** — `find_parcel(vol, X, Y) → sector`; builds/loads spatial index from S2 anchors |
 | `oracle_find_parcel.py` | STEP 3 oracle — 10/10 PASS 2026-09-19; samples blocks Albania→Austria |
+| `oracle_encode_0e.py` | **STEP 4** oracle — `encode_type0E` round-trip: raw→decode→encode→decode, compare `[4:]`; 10/10 PASS 2026-09-19 |
 
 ### Codec analysis (historical — negative results, see [`05-failed-attempts.md`](05-failed-attempts.md))
 | Script | Function |

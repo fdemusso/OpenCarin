@@ -124,9 +124,10 @@ base `0x0E` topology.
     stored in the record; M_hi (from the block pre-header) is needed to interpret
     `raw_delta[k]` when `is_16=0`.
 
-> Implementation: `carin/parser/cf1.py` — `decode_type0E` + `_dec_0e_s0` + `_dec_0e_s1` + `_dec_0e_s2`.
-> Firmware listing: `docs/fw/pbp_0x0E_decoder.asm`. `0x0E` decoder entry at `pbp+0x4320`
-> (= `db_pub+0x1e98`). Common section loop `pbp+0x40b0`; S2 handler `pbp+0x41c0`; `$694e` = memmove.
+> Implementation: `carin/parser/cf1.py` — `decode_type0E` + `_dec_0e_s0/s1/s2` (decoder);
+> `encode_type0E` + `BitWriter` (serializer, ✅ STEP 4, oracle 10/10 PASS 2026-09-19).
+> Firmware listing: `docs/fw/pbp_0x0E_decoder.asm`. Decoder entry `pbp+0x4320`
+> (= `db_pub+0x1e98`); common section loop `pbp+0x40b0`; S2 handler `pbp+0x41c0`; `$694e` = memmove.
 
 ### 6.3.2 Types `0x0D` / `0x0F` / `0x11` — TEXT address-lookup index (NOT spatial)
 
