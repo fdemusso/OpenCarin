@@ -140,6 +140,8 @@ class Cf1Context:
     subrel: int = 9                 # LAYOUT[+2], sceglie larghezze di campo
     cache_s7: int = 1               # pbp: -0x7146(a6)
     cache_s2: int = 1               # pbp: -0x7144(a6)
+    m_hi: int = 0                   # 0x0E: M_hi dal pre-header (→ decoded[7])
+    m_lo: int = 0                   # 0x0E: M_lo dal pre-header (→ decoded[6])
 
     # ---- primitive ---------------------------------------------------------
     def T(self, idx: int) -> int:
@@ -655,6 +657,8 @@ def decode_type0E(ctx: Cf1Context) -> None:
     raw_12 = ctx.copy_raw(-1, count_N * 12)
     mhi_mlo = ctx.copy_raw(-1, 2)
     M_hi, M_lo = mhi_mlo[0], mhi_mlo[1]
+    ctx.m_hi = M_hi
+    ctx.m_lo = M_lo
 
     e1 = ctx.entry(1)
     e2 = ctx.entry(2)
@@ -945,7 +949,9 @@ def encode_type0E(decoded: bytes, table: dict, dbrel: int) -> bytes:
             for d in deltas:
                 if d > max_delta:
                     max_delta = d
-    M_hi = max(1, bits_needed(max_delta + 1)) if has_any_delta else 1
+    # M_hi/M_lo: usa i valori del pre-header originale (decoded[7]/[6])
+    # per preservare il round-trip; fallback al calcolo se byte è 0 (blocco non 0x0E).
+    M_hi = decoded[7] if decoded[7] else (max(1, bits_needed(max_delta + 1)) if has_any_delta else 1)
 
     # M_lo: min bits to cover all val2 values
     max_val2 = 0
@@ -954,7 +960,7 @@ def encode_type0E(decoded: bytes, table: dict, dbrel: int) -> bytes:
         v2 = struct.unpack_from(">H", decoded, b + 22)[0]
         if v2 > max_val2:
             max_val2 = v2
-    M_lo = max(1, bits_needed(max_val2 + 1))
+    M_lo = decoded[6] if decoded[6] else max(1, bits_needed(max_val2 + 1))
 
     pb_s1 = bits_needed(e1_cnt)
     pb_s2 = bits_needed(e2_cnt)
@@ -1048,6 +1054,55 @@ def encode_type0E(decoded: bytes, table: dict, dbrel: int) -> bytes:
     return struct.pack(">I", (sector << 8) | (n_secs & 0xFF)) + payload[4:]
 
 
+def decode_s2_coords(decoded: bytes, table: dict[int, int],
+                     ) -> list[tuple[tuple[int, int], tuple[int, int]] | None]:
+    """Ricostruisce le coordinate assolute CARIN per ogni record S2 di un blocco 0x0E.
+
+    Fonte firmware: il decoder pbp+0x41c0 memorizza i delta raw (unsigned) e
+    l'ancora; il routing engine applica sign-extension e ancora+delta a query
+    time. M_hi è letto da decoded[7] (impostato da decode_block dal pre-header);
+    la larghezza per sign_extend è 16 se raw_delta[k] > (1<<M_hi)-1 (is_16),
+    M_hi altrimenti. Layout delta: d[0]=dx1, d[1]=dy1, d[2]=dx2, d[3]=dy2.
+
+    Ritorna una lista di lunghezza e2_cnt:
+      - None  → sentinella (4 × 0x7FFF, nessuna geometria)
+      - ((x1,y1),(x2,y2)) → due punti in coordinate CARIN assolute
+    """
+    base_d = table[T_DESC_BASE]
+    s2_rec = table[T_REC_S2_0E]
+    e2_off, e2_cnt = struct.unpack_from(">HH", decoded, base_d + 8)
+
+    # M_hi dal pre-header, scritto a decoded[7] da decode_block per i blocchi 0x0E
+    M_hi = decoded[7] or 1
+    thresh = (1 << M_hi) - 1
+
+    def _sx(val: int, bits: int) -> int:
+        if val & (1 << (bits - 1)):
+            return val - (1 << bits)
+        return val
+
+    result: list[tuple[tuple[int, int], tuple[int, int]] | None] = []
+    for i in range(e2_cnt):
+        b = e2_off + i * s2_rec
+        x_anc = struct.unpack_from(">i", decoded, b + 0)[0]
+        y_anc = struct.unpack_from(">i", decoded, b + 4)[0]
+        d = struct.unpack_from(">HHHH", decoded, b + 8)
+
+        if all(v == 0x7FFF for v in d):
+            result.append(None)
+        else:
+            w = [16 if v > thresh else M_hi for v in d]
+            dx1 = _sx(d[0], w[0])
+            dy1 = _sx(d[1], w[1])
+            dx2 = _sx(d[2], w[2])
+            dy2 = _sx(d[3], w[3])
+            result.append((
+                (x_anc + dx1, y_anc + dy1),
+                (x_anc + dx2, y_anc + dy2),
+            ))
+    return result
+
+
 def decode_block(raw: bytes, table: dict[int, int], dbrel: int,
                  subrel: int = 9, sector_size: int = SECTOR) -> bytes:
     """Decodifica un blocco CF=1. `raw` sono i byte su disco, header incluso."""
@@ -1064,4 +1119,7 @@ def decode_block(raw: bytes, table: dict[int, int], dbrel: int,
     DECODERS[btype](ctx)
     ctx.dst[6] = 0
     ctx.dst[7] = 0
+    if ctx.m_hi:            # 0x0E: preserve M_lo/M_hi so decode_s2_coords can read them
+        ctx.dst[6] = ctx.m_lo
+        ctx.dst[7] = ctx.m_hi
     return bytes(ctx.dst)

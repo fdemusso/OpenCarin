@@ -124,8 +124,30 @@ base `0x0E` topology.
     stored in the record; M_hi (from the block pre-header) is needed to interpret
     `raw_delta[k]` when `is_16=0`.
 
+**S2 coordinate reconstruction** (✅ VERIFIED STEP 5, oracle 10/10 PASS 2026-09-19):
+`decode_block` stores `M_hi` at `decoded[7]` and `M_lo` at `decoded[6]` after decoding a
+0x0E block (bytes normally zeroed for CF). `decode_s2_coords(decoded, table)` reads M_hi
+from `decoded[7]` and reconstructs absolute coordinates:
+
+```python
+M_hi   = decoded[7]          # from block pre-header
+thresh = (1 << M_hi) - 1
+for each S2 record i:
+    x_anc, y_anc = S2[i]+0, S2[i]+4   # i32 anchor
+    d[0..3]      = S2[i]+8             # 4 × u16 raw delta (unsigned)
+    for k in 0..3:
+        w_k = 16 if d[k] > thresh else M_hi
+        signed_k = sign_extend(d[k], w_k)   # two's complement
+    pt1 = (x_anc + signed_0, y_anc + signed_1)   # d[0]=dx1, d[1]=dy1
+    pt2 = (x_anc + signed_2, y_anc + signed_3)   # d[2]=dx2, d[3]=dy2
+```
+
+Oracle: for each non-sentinel record with anchor in block's anchor bbox,
+`|pt.coord − anchor| ≤ max_magnitude_k` (32767 for is_16, `1<<(M_hi−1)` otherwise).
+
 > Implementation: `carin/parser/cf1.py` — `decode_type0E` + `_dec_0e_s0/s1/s2` (decoder);
-> `encode_type0E` + `BitWriter` (serializer, ✅ STEP 4, oracle 10/10 PASS 2026-09-19).
+> `encode_type0E` + `BitWriter` (serializer, ✅ STEP 4, oracle 10/10 PASS 2026-09-19);
+> `decode_s2_coords` (coord reconstruction, ✅ STEP 5, oracle 10/10 PASS 2026-09-19).
 > Firmware listing: `docs/fw/pbp_0x0E_decoder.asm`. Decoder entry `pbp+0x4320`
 > (= `db_pub+0x1e98`); common section loop `pbp+0x40b0`; S2 handler `pbp+0x41c0`; `$694e` = memmove.
 

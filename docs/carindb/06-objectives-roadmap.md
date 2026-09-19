@@ -55,6 +55,11 @@ geometry and semantics — not just labels and POIs.
    verified on bytes [4:] (block_id length field legitimately differs due to re-encoding
    efficiency). Re-encoded blocks are ~30–40% smaller than original (anchor dedup +
    M_hi/M_lo derived from data distribution).
+7. ✅ **S2 coordinate reconstruction (STEP 5) — DONE** (2026-09-19). `decode_s2_coords(decoded,
+   table)` in `carin/parser/cf1.py`; oracle 10/10 PASS (`scripts/oracle_s2_coords.py`).
+   `decode_block` stores M_hi at `decoded[7]` (avoids re-parsing raw block); per-delta
+   magnitude check verifies sign-extension correctness (catches wrong M_hi). Blocks have
+   M_hi ∈ {6, 7} in the sampled set; is_16 deltas use 16-bit sign-extension.
 
 ## Open `UNKNOWN` markers (quick reference)
 
