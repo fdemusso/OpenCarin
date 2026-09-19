@@ -876,6 +876,178 @@ DECODERS = {
 }
 
 
+class BitWriter:
+    """MSB-first bit writer — inverse of BitReader (pbp+0x49bc BFEXTU convention)."""
+
+    def __init__(self) -> None:
+        self._buf = bytearray()
+        self._pos = 0
+
+    def put(self, width: int, value: int) -> None:
+        if width <= 0:
+            return
+        for shift in range(width - 1, -1, -1):
+            bit = (value >> shift) & 1
+            byte_idx = self._pos >> 3
+            bit_off  = 7 - (self._pos & 7)
+            if byte_idx >= len(self._buf):
+                self._buf.append(0)
+            if bit:
+                self._buf[byte_idx] |= 1 << bit_off
+            self._pos += 1
+
+    def to_bytes(self) -> bytes:
+        return bytes(self._buf)
+
+
+def encode_type0E(decoded: bytes, table: dict, dbrel: int) -> bytes:
+    """Re-encode a decoded 0x0E block to CF=1 raw bytes.
+
+    Round-trip guarantee: decode_block(encode_type0E(decoded, table, dbrel),
+                                       table, dbrel) == decoded  (bytes [4:]).
+    """
+    prolog_size = table[T_PROLOG_0E]    # 48
+    s0_rec  = table[T_REC_S0_0E]       # 8
+    s1_rec  = table[T_REC_S1_0E]       # 6
+    s2_rec  = table[T_REC_S2_0E]       # 24
+    base_d  = table[T_DESC_BASE]        # offset of section descriptor in decoded
+
+    total   = len(decoded)
+    usize   = total // SECTOR
+    ptrbits = bits_needed(total)
+
+    e0_off, e0_cnt = struct.unpack_from(">HH", decoded, base_d + 0)
+    e1_off, e1_cnt = struct.unpack_from(">HH", decoded, base_d + 4)
+    e2_off, e2_cnt = struct.unpack_from(">HH", decoded, base_d + 8)
+
+    # anchor table: unique 12-byte signatures in first-appearance order
+    seen: dict[bytes, int] = {}
+    anchors: list[bytes] = []
+    for i in range(e2_cnt):
+        b   = e2_off + i * s2_rec
+        sig = bytes(decoded[b:b + 8]) + bytes(decoded[b + 16:b + 20])
+        if sig not in seen:
+            seen[sig] = len(anchors)
+            anchors.append(sig)
+
+    count_N    = len(anchors)
+    raw_12     = b"".join(anchors)
+    idx_N_bits = bits_needed(count_N) if count_N > 0 else 1
+
+    # M_hi: min bits to cover all delta values in has_deltas=True records
+    max_delta     = 0
+    has_any_delta = False
+    for i in range(e2_cnt):
+        b      = e2_off + i * s2_rec
+        deltas = struct.unpack_from(">HHHH", decoded, b + 8)
+        if not all(d == 0x7FFF for d in deltas):
+            has_any_delta = True
+            for d in deltas:
+                if d > max_delta:
+                    max_delta = d
+    M_hi = max(1, bits_needed(max_delta + 1)) if has_any_delta else 1
+
+    # M_lo: min bits to cover all val2 values
+    max_val2 = 0
+    for i in range(e2_cnt):
+        b  = e2_off + i * s2_rec
+        v2 = struct.unpack_from(">H", decoded, b + 22)[0]
+        if v2 > max_val2:
+            max_val2 = v2
+    M_lo = max(1, bits_needed(max_val2 + 1))
+
+    pb_s1 = bits_needed(e1_cnt)
+    pb_s2 = bits_needed(e2_cnt)
+
+    bw = BitWriter()
+
+    # ── Section 0 (pbp+0x40b0 / 0x40fe) ─────────────────────────────────────
+    prev_B: int = -1
+    prev_C: int = -1
+    for i in range(e0_cnt):
+        b     = e0_off + i * s0_rec
+        A     = struct.unpack_from(">H", decoded, b)[0]
+        FLAGS = decoded[b + 2]
+        B     = decoded[b + 3]
+        C     = struct.unpack_from(">H", decoded, b + 4)[0]
+        D     = struct.unpack_from(">H", decoded, b + 6)[0]
+        d_idx = (D - e1_off) // s1_rec
+
+        bw.put(ptrbits, A)
+        bw.put(2, FLAGS & 0x03)
+        bw.put(1, (FLAGS >> 4) & 1)
+
+        # inherit=1 if B/C differ from prev (or first record with non-zero B/C)
+        need_bc = (prev_B < 0 and (B != 0 or C != 0)) or \
+                  (prev_B >= 0 and (B != prev_B or C != prev_C))
+        bw.put(1, 1 if need_bc else 0)
+        if need_bc:
+            bw.put(3, B)
+            bw.put(ptrbits, C)
+        prev_B, prev_C = B, C
+
+        bw.put(pb_s1, d_idx)
+
+    # ── Section 1 (pbp+0x4168) ───────────────────────────────────────────────
+    for i in range(e1_cnt):
+        b      = e1_off + i * s1_rec
+        ptr    = struct.unpack_from(">H", decoded, b)[0]
+        span   = decoded[b + 2]
+        flag   = decoded[b + 3]
+        s2_idx = (ptr - e2_off) // s2_rec
+
+        bw.put(pb_s2, s2_idx)
+        if span > 1:
+            bw.put(1, 1)
+            bw.put(pb_s2, span - 2)
+        else:
+            bw.put(1, 0)
+        bw.put(1, flag)
+
+    # ── Section 2 (pbp+0x41c0) ───────────────────────────────────────────────
+    for i in range(e2_cnt):
+        b      = e2_off + i * s2_rec
+        sig    = bytes(decoded[b:b + 8]) + bytes(decoded[b + 16:b + 20])
+        idx_N  = seen[sig]
+        deltas = struct.unpack_from(">HHHH", decoded, b + 8)
+        val1   = struct.unpack_from(">H", decoded, b + 20)[0]
+        val2   = struct.unpack_from(">H", decoded, b + 22)[0]
+
+        bw.put(idx_N_bits, idx_N)
+
+        has_deltas = not all(d == 0x7FFF for d in deltas)
+        bw.put(1, 1 if has_deltas else 0)
+        if has_deltas:
+            thresh = (1 << M_hi) - 1
+            for d in deltas:
+                is_16 = 1 if d > thresh else 0
+                bw.put(1, is_16)
+                bw.put(16 if is_16 else M_hi, d)
+
+        bw.put(13, val1 >> 1)
+        bw.put(M_lo, val2)
+
+    # ── assemble raw block ────────────────────────────────────────────────────
+    prolog    = bytearray(decoded[:prolog_size])
+    prolog[6] = 1       # CF=1
+    prolog[7] = usize   # decompressed sectors
+
+    pre_hdr   = struct.pack(">H", count_N) + raw_12 + bytes([M_hi, M_lo])
+    bitstream = bw.to_bytes()
+
+    payload = bytes(prolog) + pre_hdr + bitstream
+
+    rem = len(payload) % SECTOR
+    if rem:
+        payload += b"\x00" * (SECTOR - rem)
+
+    # fix block_id: preserve sector, update length-in-sectors
+    old_bid = struct.unpack_from(">I", payload, 0)[0]
+    sector  = old_bid >> 8
+    n_secs  = len(payload) // SECTOR
+    return struct.pack(">I", (sector << 8) | (n_secs & 0xFF)) + payload[4:]
+
+
 def decode_block(raw: bytes, table: dict[int, int], dbrel: int,
                  subrel: int = 9, sector_size: int = SECTOR) -> bytes:
     """Decodifica un blocco CF=1. `raw` sono i byte su disco, header incluso."""

@@ -50,8 +50,11 @@ geometry and semantics — not just labels and POIs.
    S2 anchor coordinate index.
 5. **`BLOCK_TYPE → section_type[]` map (item 7)**: extract from firmware (it is
    hardcoded there, per the `decode_type00` dispatch), not from the disc.
-6. **`0x0E` CF=1 Serializer (STEP 4)**: implement `encode_type0E()` in `carin/parser/cf1.py`
-   now that the full decode path is verified end-to-end.
+6. ✅ **`0x0E` CF=1 Serializer (STEP 4) — DONE** (2026-09-19). `encode_type0E()` in
+   `carin/parser/cf1.py`; oracle 10/10 PASS (`scripts/oracle_encode_0e.py`). Round-trip
+   verified on bytes [4:] (block_id length field legitimately differs due to re-encoding
+   efficiency). Re-encoded blocks are ~30–40% smaller than original (anchor dedup +
+   M_hi/M_lo derived from data distribution).
 
 ## Open `UNKNOWN` markers (quick reference)
 
