@@ -265,9 +265,23 @@ parameterizes the CF=1 decoder** — see [`04-cf1-codec.md`](04-cf1-codec.md) §
 59:0x04  5A:0x02  8A:0x01  97:0x10  9D:0x16
 ```
 
-> **UNKNOWN**: the mapping `BLOCK_TYPE → list of section_types` was not found in
-> any block. The firmware hardcodes it. Actual record sizes were derived
-> empirically (see [`03-road-network.md`](03-road-network.md) §6) and are the primary reference.
+> **RESOLVED (Firmware Architecture Split)**: The mapping `BLOCK_TYPE → list of section_types`
+> is not stored in any table on disc because the OS-9 navigation firmware splits the responsibility
+> across modules with separate Global Data Areas (GDA, register `a6`):
+>
+> 1. **Map-Rendering (`pbp` / `db_pub`)**:
+>    - Loads the Superblock's `RECORD_SIZE_TABLE` into its private static data area at offset `-$71cc(a6)`.
+>    - Accesses entry `idx` via `-(0x71cc - 2*idx)(a6)`.
+>    - Hardcodes the section indices for display/rendering blocks:
+>      - `0x00`: `T[0x05]`, `T[0x06]`, `T[0x08]`, `T[0x09]`, `T[0x0B]`, `T[0x0C]`, `T[0x0F]`, `T[0x10]`, `T[0x12]`, `T[0x13]`, `T[0x14]`, `T[0x15]`, `T[0x40]`, `T[0x4C]`, `T[0x59]`.
+>      - `0x0E`: `T[0x2B]`, `T[0x2D]`, `T[0x41]`, `T[0x42]`, etc.
+>      - `0x14`, `0x15`, `0x16`: `T[0x3A]`, `T[0x3B]`, `T[0x3C]`, `T[0x3D]`, `T[0x3F]`.
+>    - For any compressed block `> 0x0E` not matched by these specific decoders (e.g. `0x10`, `0x12`), the dispatcher at `0x3698` branches to fallback `0x36d2`, which calculates total uncompressed bytes `(length << 11)` and calls generic decompression subroutine `$6a06`, returning an unparsed payload blob.
+>
+> 2. **Routing Engine (`rpmod`)**:
+>    - Operates in its own distinct GDA (`a6` points to a separate physical memory block; offsets like `-$714a(a6)` are function pointers in its OS-9 jump table, completely unrelated to `db_pub`'s record size table).
+>    - **Ignores the disc's `RECORD_SIZE_TABLE` completely**.
+>    - Hardcodes all record sizes and layout variables in a large initialization routine at address `01af8a` (e.g., `move.w #$16, -$7ed6(a6)`, `move.w #$4, -$7ebe(a6)`). These internal variables govern parsing of the raw decompressed blobs provided by `db_pub`.
 
 ### 3.3 Python Struct — Superblock
 
@@ -446,10 +460,12 @@ CF=1 blocks use a dedicated prefix encoder — see [`04-cf1-codec.md`](04-cf1-co
   the current block (used in `0x0C`/`0x0E` parcels).
 
 > **RESOLVED**: `NAME_PTR` `high16` corresponds to the lower 16 bits of a type `0x0D` `BLOCK_ID`.
-> - `NAME_PTR >> 16` gives the block ID (lower 16 bits). There are 10 `0x0D` blocks in sectors 17..406. For example, `0x9A30` maps to `BLOCK_ID` `0x00009A30` (sector 154).
+> - `NAME_PTR >> 16` gives the block ID (lower 16 bits). There are 10 `0x0D` blocks in sectors 17..406. For example, `0x9A30` maps to `BLOCK_ID` `0x00009A30` (sector 154, length 48).
 > - `NAME_PTR & 0xFFFF` gives the byte offset inside the uncompressed `0x0D` block.
 > - The `0x0D` block contains an 8-byte record at that offset: `>IHH` (`target_block_id`, `metadata`, `target_offset`).
 > - The target block (e.g., `0x0C`) contains the actual municipality/string data. The 44 country names are additionally cached in `0x0A` for faster UI rendering.
+>
+> ⚠️ **CRITICAL VULNERABILITY**: Because the `BLOCK_ID` format is `(sector << 8) | length`, taking only the lower 16 bits (`bid & 0xFFFF`) effectively computes `((sector & 0xFF) << 8) | length`. This means **the upper bits of the sector number are lost**! For sectors > 255 (e.g., sector 304 / `0x0130`), the `high16` will be truncated (e.g., `0x302F`), making it impossible to reconstruct the full sector number in O(1) time. To resolve a `NAME_PTR`, a parser **must** pre-scan the volume to build a lookup table mapping the truncated 16-bit IDs to the full 32-bit `BLOCK_ID`s of all `0x0D` blocks.
 
 ```python
 def carin_str(buf: bytes, off: int) -> str:

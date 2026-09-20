@@ -210,6 +210,13 @@ is in Albania because 'a' is the first letter alphabetically. **This is address-
 street name, not geographic proximity**. Do NOT use `0x0D`/`0x0F`/`0x11` for spatial
 parcel lookup — use `scripts/find_parcel.py` instead (index from S2 `x_anc`/`y_anc`).
 
+> **NAME_PTR Connection & 16-bit Truncation**:
+> The 44 country records in block `0x0A` (Section 1) store a 32-bit `NAME_PTR` pointing into these `0x0D` blocks:
+> - `high16` = `BLOCK_ID & 0xFFFF` of a `0x0D` block (`((sector & 0xFF) << 8) | length`).
+> - `low16` = byte offset into the uncompressed `0x0D` block.
+> - **Truncation Vulnerability**: For sectors > 255 (4 out of 10 `0x0D` blocks in `NAV_DB_21708.ISO`), the upper byte of the sector is discarded. Resolving `NAME_PTR` without a pre-scanned lookup table of `0x0D` blocks is impossible.
+> - The record pointed to in `0x0D` links to an administrative `0x0C` parcel node. For UI display, human-readable country names are directly cached in `0x0A`.
+
 ### 6.4 Type `0x04` (80,825 blocks) — 160-entry table
 
 ```
