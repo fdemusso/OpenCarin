@@ -265,23 +265,23 @@ parameterizes the CF=1 decoder** — see [`04-cf1-codec.md`](04-cf1-codec.md) §
 59:0x04  5A:0x02  8A:0x01  97:0x10  9D:0x16
 ```
 
-> **RESOLVED (Firmware Architecture Split)**: The mapping `BLOCK_TYPE → list of section_types`
-> is not stored in any table on disc because the OS-9 navigation firmware splits the responsibility
-> across modules with separate Global Data Areas (GDA, register `a6`):
+> **RESOLVED (Dual Module Architecture: `db_pub` vs `rpmod`)**:
+> The `RECORD_SIZE_TABLE` is read and handled independently by the two major modules of the OS-9 navigation stack, each with its own private Global Data Area (GDA, register `a6`):
 >
 > 1. **Map-Rendering (`pbp` / `db_pub`)**:
->    - Loads the Superblock's `RECORD_SIZE_TABLE` into its private static data area at offset `-$71cc(a6)`.
->    - Accesses entry `idx` via `-(0x71cc - 2*idx)(a6)`.
->    - Hardcodes the section indices for display/rendering blocks:
+>    - Copies the disc's `RECORD_SIZE_TABLE` into its private static area at base offset `-$71cc(a6)`.
+>    - Reads entry `idx` via `-(0x71cc - 2*idx)(a6)`.
+>    - Hardcodes which section indices to use for rendering blocks:
 >      - `0x00`: `T[0x05]`, `T[0x06]`, `T[0x08]`, `T[0x09]`, `T[0x0B]`, `T[0x0C]`, `T[0x0F]`, `T[0x10]`, `T[0x12]`, `T[0x13]`, `T[0x14]`, `T[0x15]`, `T[0x40]`, `T[0x4C]`, `T[0x59]`.
 >      - `0x0E`: `T[0x2B]`, `T[0x2D]`, `T[0x41]`, `T[0x42]`, etc.
 >      - `0x14`, `0x15`, `0x16`: `T[0x3A]`, `T[0x3B]`, `T[0x3C]`, `T[0x3D]`, `T[0x3F]`.
->    - For any compressed block `> 0x0E` not matched by these specific decoders (e.g. `0x10`, `0x12`), the dispatcher at `0x3698` branches to fallback `0x36d2`, which calculates total uncompressed bytes `(length << 11)` and calls generic decompression subroutine `$6a06`, returning an unparsed payload blob.
+>    - **Non-rendering blocks (`0x10`, `0x12`, etc.)**: In the dispatcher at `0x3698`, blocks `> 0x0E` not handled by dedicated decoders branch to `0x36d2`. Here, `pbp` calculates `size = sectors * 2048`, sets `val = 0`, and calls `bsr.w $6a06` (`memset(dest, 0, size)`), simply zeroing the buffer because the map renderer does not draw them.
 >
 > 2. **Routing Engine (`rpmod`)**:
->    - Operates in its own distinct GDA (`a6` points to a separate physical memory block; offsets like `-$714a(a6)` are function pointers in its OS-9 jump table, completely unrelated to `db_pub`'s record size table).
->    - **Ignores the disc's `RECORD_SIZE_TABLE` completely**.
->    - Hardcodes all record sizes and layout variables in a large initialization routine at address `01af8a` (e.g., `move.w #$16, -$7ed6(a6)`, `move.w #$4, -$7ebe(a6)`). These internal variables govern parsing of the raw decompressed blobs provided by `db_pub`.
+>    - Operates in its own distinct GDA where the table base is **`-$7ee8(a6)`** with cell offset `-$7ee8 + (ID * 2)`.
+>    - **Factory Defaults**: Subroutine `01af8a` pre-loads 66 hardcoded default constants for IDs `0x01` to `0x42` (from `-$7ee6(a6)` to `-$7e64(a6)`).
+>    - **Dynamic Disc Override**: Subroutine `01b122` parses the Superblock. It reads `DB-REL` at `+0x1A`. If `DB-REL >= 18` (`0x12`), it reads descriptor `+0x28` `{u16 offset, u16 count}` and dynamically **overrides** the table cells in RAM (`move.w $2(a1), (a0, d0.l * 2)`) with the values from the disc's `RECORD_SIZE_TABLE` for all entries with `ID <= 0x42` (66 decimal).
+>    - The rest of `rpmod` relies on this table (over 100 read occurrences) for record stride multiplication, division to calculate element counts (`divs.l d0, d1`), and parcel navigation. Entries with `ID > 0x42` (e.g. `0x4C`, `0x59`) are ignored by `rpmod`.
 
 ### 3.3 Python Struct — Superblock
 

@@ -71,7 +71,7 @@ is the fastest way to locate the codec in any firmware (`scripts/fw_hunt_charmap
         - 0x00:                 branch 0x36b4 -> bsr 0x3ea0 (decode_type00)
         - 0x0E:                 branch 0x36be -> bsr 0x4320 (decode_type0E)
         - 0x14, 0x15, 0x16:     branch 0x36c8 -> bsr 0x46aa
-        - others > 0x0E (0x10, 0x12, etc.): branch 0x36d2 -> pass length*2048, bsr 0x6a06
+        - others > 0x0E (0x10, 0x12, etc.): branch 0x36d2 -> pass length*2048, bsr 0x6a06 (memset 0 — buffer zeroed because non-rendered)
         otherwise (CF=0): branch 0x3726 (memcpy raw sectors)
 0x4798  init(src)        PTRBITS = bits_needed(usize * SECTOR)   [CC-93: SECTOR=2048]
 0x47da  copy_raw(dst,n)  memcpy from raw cursor, cursor += n
