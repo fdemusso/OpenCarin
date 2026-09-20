@@ -76,6 +76,14 @@ Verified on sample:
   FLAGS is instead used in cost/penalty calculation (`rpmod+$6eae`: arc value × `0x3C00`).
   Direction enforcement for `0x0E` is likely implicit in graph topology (arc A→B vs B→A),
   not a binary flag on each arc. GeoJSON visual analysis and OSM overlay still required.
+  **Twin-arc test (2026-09-20, `scripts/test_twin_arcs.py`, 50 blocks / 1915 arcs):**
+  Cross-block global twin rate (reverse-geometry arc in same or neighbouring parcel):
+  0x00 = 21.5 %, 0x10 = 22.1 %, delta = −0.7 % (within-block: 4.5 % vs 11.1 %, delta = −6.6 %).
+  **Result: SMENTITO (paired-arc model).** Both FLAGS values have statistically identical twin
+  rates, proving arcs are stored individually (one arc per road segment) regardless of direction.
+  The "direction = topology" model (arc A→B and B→A both stored) is false. FLAGS bit4 direction
+  semantics remain open — the constraint is NOT expressed through paired arc storage; likely a
+  routing-engine flag consumed at `rpmod+$6eae` or an undiscovered cost-path function.
 * `B` ∈ `{1,2,3,4,5,6}` in CF=1 blocks (3-bit field, `getbits(3)`, inherited across records).
   Distribution: B=1 43 %, B=4 19 %, B=5 15 %, B=3 14 %, B=2 6 %, B=6 3 %.
   Functional class (road category); CF=0 blocks may also carry the sentinel value `0xFF` ("absent").

@@ -539,14 +539,17 @@ def _dec_0e_s0(ctx: Cf1Context, e1: Entry, e2: Entry) -> None:
       getbits(bits_needed(e1.count)) -> D_idx
              D = e1.off + D_idx * T[0x41]  [+6 u16]
 
-    FLAGS semantics (working hypothesis, UNCONFIRMED — 563 CF=1 blocks / 218k records):
-      bit4=0 -> bidirectional (0x00=67%, 0x01=5%, 0x02=1%)
-      bit4=1 -> one-way forward / digitization direction (0x10=26%, 0x11=1%, 0x12=0.1%)
+    FLAGS semantics (working hypothesis, UNCONFIRMED — twin-arc test 2026-09-20 SMENTITO
+      paired-arc model; see docs/carindb/03-road-network.md §6.3):
+      bit4=0 -> bidirectional? (0x00=67%, 0x01=5%, 0x02=1%)
+      bit4=1 -> one-way forward? (0x10=26%, 0x11=1%, 0x12=0.1%)
       bits[1:0]: access category  0=normal, 1=restricted/ramp, 2=non-motorised or ferry
       B (3-bit, getbits(3)): functional class 1..6; distribution B=1(43%),4(19%),5(15%),3(14%)
+    Twin-arc cross-block test (50 blocks / 1915 arcs): 0x00 twin rate 21.5%, 0x10=22.1%,
+      delta=-0.7% → arcs stored once per segment; paired-arc storage model SMENTITO.
     Firmware (2026-09-20): can_traverse (rpmod+$4360) does NOT read FLAGS; it reads
       block[D+0x10/+0x11] which are always 0x00 for 0x0E → all arcs are traversable.
-      FLAGS feeds cost calculation (rpmod+$6eae). Direction implicit in arc graph topology.
+      FLAGS feeds cost calculation (rpmod+$6eae). Direction semantics: open question.
     """
     pb = ctx.ptrbits
     pb_s1 = bits_needed(e1.count)
