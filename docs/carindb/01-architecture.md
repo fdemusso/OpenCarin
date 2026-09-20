@@ -387,9 +387,9 @@ low byte = prefix length (1). `offset`/`count` index SECTION_0 of the referenced
  0x18   2   SEC3_OFFSET   offset in SECTION_3 (0 = no entry)
  0x1A   2   SEC3_COUNT    number of 12-byte records
  0x1C   2   0x01F4 (500)  \
- 0x1E   2   0x012C (300)   |  DEFAULT_SPEED[4] — constants in this DB
- 0x20   2   0x03E8 (1000)  |  (unit: presumably 0.1 km/h; UNKNOWN)
- 0x22   2   0x01F4 (500)  /
+ 0x1E   2   0x012C (300)   |  DEFAULT_SPEED[4] — Identical for all 44 countries (except `eu`=0).
+ 0x20   2   0x03E8 (1000)  |  Unit is 0.1 km/h (50.0, 30.0, 100.0, 50.0). Global routing
+ 0x22   2   0x01F4 (500)  /   fallbacks for urban/residential/rural paths without speed limits.
  0x24   4   FLAGS         0x00000000 / 0x00000001 / 0x00010000
                           **0x00010000 only for `ie` and `gb`** -> left-hand traffic
  0x28   2   COUNTRY_ID    id used throughout the DB (at=0x0E, be=0x15, cz=0x38,
