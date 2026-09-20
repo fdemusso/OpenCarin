@@ -67,7 +67,12 @@ is the fastest way to locate the codec in any firmware (`scripts/fw_hunt_charmap
 
 ```
 0x3660  uncompressed_sectors(hdr)   bit 0 of hdr[6] -> hdr[7] otherwise blockid&0xff
-0x3698  dispatch: if hdr[6]&1 -> init + switch on BLOCK_TYPE, otherwise memcpy
+0x3698  dispatch: if hdr[6]&1 -> init + switch on BLOCK_TYPE:
+        - 0x00:                 branch 0x36b4 -> bsr 0x3ea0 (decode_type00)
+        - 0x0E:                 branch 0x36be -> bsr 0x4320 (decode_type0E)
+        - 0x14, 0x15, 0x16:     branch 0x36c8 -> bsr 0x46aa
+        - others > 0x0E (0x10, 0x12, etc.): branch 0x36d2 -> pass length*2048, bsr 0x6a06 (memset 0 — buffer zeroed because non-rendered)
+        otherwise (CF=0): branch 0x3726 (memcpy raw sectors)
 0x4798  init(src)        PTRBITS = bits_needed(usize * SECTOR)   [CC-93: SECTOR=2048]
 0x47da  copy_raw(dst,n)  memcpy from raw cursor, cursor += n
 0x4800  copy_section(base, entry, recsize, plus1)
@@ -88,8 +93,9 @@ For a 10,752 B block it is 14 (vs 16 bits of the decompressed field) — hence t
 `pbp+0x3582` reads the superblock: descriptor at `+0x28` = `{u16 offset, u16 count}`,
 then `count` pairs `{u16 id, u16 value}` that **override** hardcoded defaults
 (`pbp+0x33ea`, extract via `scripts/cf1_defaults.py`). This is the `RECORD_SIZE_TABLE`
-of [`01-architecture.md`](01-architecture.md) §3.2. In MIPS firmware the same table
-is pointed to by `-0x7900($gp)` with `field(X) = T[(X-8)/2]`.
+of [`01-architecture.md`](01-architecture.md) §3.2.
+- In **m68k firmware** (`pbp` / `db_pub`), the table is copied into the module's Global Data Area at `-$71cc(a6)` and accessed as `-(0x71cc - 2*idx)(a6)`.
+- In **MIPS firmware**, the table is pointed to by `-0x7900($gp)` with `field(X) = T[(X-8)/2]`.
 
 Entries used by the type `0x00` decoder (CC-93 default → DB-REL 34 actual):
 

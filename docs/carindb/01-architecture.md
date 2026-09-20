@@ -265,12 +265,26 @@ parameterizes the CF=1 decoder** — see [`04-cf1-codec.md`](04-cf1-codec.md) §
 59:0x04  5A:0x02  8A:0x01  97:0x10  9D:0x16
 ```
 
-> **PARTIALLY RECOVERED**: the firmware-hardcoded mapping `BLOCK_TYPE → list
-> of section_types` was recovered from CF=1 firmware T[] layout-table reads
-> (CC-93 `pbp`, Mk3/RR MIPS `db_pub`) cross-checked against RST values and CF=0
-> empirical measurements. See §3.2.1 below. Types not covered by the CF=1 codec
-> (0x06, 0x09, 0x0C, 0x10) are documented empirically in
-> [`03-road-network.md`](03-road-network.md) §6.
+> **RESOLVED (Dual Module Architecture: `db_pub` vs `rpmod`)**:
+> The `RECORD_SIZE_TABLE` is read and handled independently by the two major modules of the OS-9 navigation stack, each with its own private Global Data Area (GDA, register `a6`):
+>
+> 1. **Map-Rendering (`pbp` / `db_pub`)**:
+>    - Copies the disc's `RECORD_SIZE_TABLE` into its private static area at base offset `-$71cc(a6)`.
+>    - Reads entry `idx` via `-(0x71cc - 2*idx)(a6)`.
+>    - Hardcodes which section indices to use for rendering blocks:
+>      - `0x00`: `T[0x05]`, `T[0x06]`, `T[0x08]`, `T[0x09]`, `T[0x0B]`, `T[0x0C]`, `T[0x0F]`, `T[0x10]`, `T[0x12]`, `T[0x13]`, `T[0x14]`, `T[0x15]`, `T[0x40]`, `T[0x4C]`, `T[0x59]`.
+>      - `0x0E`: `T[0x2B]`, `T[0x2D]`, `T[0x41]`, `T[0x42]`, etc.
+>      - `0x14`, `0x15`, `0x16`: `T[0x3A]`, `T[0x3B]`, `T[0x3C]`, `T[0x3D]`, `T[0x3F]`.
+>    - **Non-rendering blocks (`0x10`, `0x12`, etc.)**: In the dispatcher at `0x3698`, blocks `> 0x0E` not handled by dedicated decoders branch to `0x36d2`. Here, `pbp` calculates `size = sectors * 2048`, sets `val = 0`, and calls `bsr.w $6a06` (`memset(dest, 0, size)`), simply zeroing the buffer because the map renderer does not draw them.
+>
+> 2. **Routing Engine (`rpmod`)**:
+>    - Operates in its own distinct GDA where the table base is **`-$7ee8(a6)`** with cell offset `-$7ee8 + (ID * 2)`.
+>    - **Factory Defaults**: Subroutine `01af8a` pre-loads 66 hardcoded default constants for IDs `0x01` to `0x42` (from `-$7ee6(a6)` to `-$7e64(a6)`).
+>    - **Dynamic Disc Override**: Subroutine `01b122` parses the Superblock. It reads `DB-REL` at `+0x1A`. If `DB-REL >= 18` (`0x12`), it reads descriptor `+0x28` `{u16 offset, u16 count}` and dynamically **overrides** the table cells in RAM (`move.w $2(a1), (a0, d0.l * 2)`) with the values from the disc's `RECORD_SIZE_TABLE` for all entries with `ID <= 0x42` (66 decimal).
+>    - The rest of `rpmod` relies on this table (over 100 read occurrences) for record stride multiplication, division to calculate element counts (`divs.l d0, d1`), and parcel navigation. Entries with `ID > 0x42` (e.g. `0x4C`, `0x59`) are ignored by `rpmod`.
+
+See §3.2.1 below for the full `BLOCK_TYPE → section_type[]` mapping. Types not covered by the CF=1 codec
+(0x06, 0x09, 0x0C, 0x10) are documented empirically in [`03-road-network.md`](03-road-network.md) §6.
 
 ### 3.2.1 `BLOCK_TYPE → section_type[]` (recovered from firmware)
 
@@ -494,9 +508,9 @@ low byte = prefix length (1). `offset`/`count` index SECTION_0 of the referenced
  0x18   2   SEC3_OFFSET   offset in SECTION_3 (0 = no entry)
  0x1A   2   SEC3_COUNT    number of 12-byte records
  0x1C   2   0x01F4 (500)  \
- 0x1E   2   0x012C (300)   |  DEFAULT_SPEED[4] — constants in this DB
- 0x20   2   0x03E8 (1000)  |  (unit: presumably 0.1 km/h; UNKNOWN)
- 0x22   2   0x01F4 (500)  /
+ 0x1E   2   0x012C (300)   |  DEFAULT_SPEED[4] — Identical for all 44 countries (except `eu`=0).
+ 0x20   2   0x03E8 (1000)  |  Unit is 0.1 km/h (50.0, 30.0, 100.0, 50.0). Global routing
+ 0x22   2   0x01F4 (500)  /   fallbacks for urban/residential/rural paths without speed limits.
  0x24   4   FLAGS         0x00000000 / 0x00000001 / 0x00010000
                           **0x00010000 only for `ie` and `gb`** -> left-hand traffic
  0x28   2   COUNTRY_ID    id used throughout the DB (at=0x0E, be=0x15, cz=0x38,
@@ -552,8 +566,13 @@ CF=1 blocks use a dedicated prefix encoder — see [`04-cf1-codec.md`](04-cf1-co
   (`high16` = segment, `low16` = offset within segment) or with a `u16` relative to
   the current block (used in `0x0C`/`0x0E` parcels).
 
-> **UNKNOWN**: the resolution of `NAME_PTR` high16 (segments `6C2E 9A30 F931 CA2F
-> 112E 12A6`) is not determined. It does not correspond to a `BLOCK_ID`.
+> **RESOLVED**: `NAME_PTR` `high16` corresponds to the lower 16 bits of a type `0x0D` `BLOCK_ID`.
+> - `NAME_PTR >> 16` gives the block ID (lower 16 bits). There are 10 `0x0D` blocks in sectors 17..406. For example, `0x9A30` maps to `BLOCK_ID` `0x00009A30` (sector 154, length 48).
+> - `NAME_PTR & 0xFFFF` gives the byte offset inside the uncompressed `0x0D` block.
+> - The `0x0D` block contains an 8-byte record at that offset: `>IHH` (`target_block_id`, `metadata`, `target_offset`).
+> - The target block (e.g., `0x0C`) contains the actual municipality/string data. The 44 country names are additionally cached in `0x0A` for faster UI rendering.
+>
+> ⚠️ **CRITICAL VULNERABILITY**: Because the `BLOCK_ID` format is `(sector << 8) | length`, taking only the lower 16 bits (`bid & 0xFFFF`) effectively computes `((sector & 0xFF) << 8) | length`. This means **the upper bits of the sector number are lost**! For sectors > 255 (e.g., sector 304 / `0x0130`), the `high16` will be truncated (e.g., `0x302F`), making it impossible to reconstruct the full sector number in O(1) time. To resolve a `NAME_PTR`, a parser **must** pre-scan the volume to build a lookup table mapping the truncated 16-bit IDs to the full 32-bit `BLOCK_ID`s of all `0x0D` blocks.
 
 ```python
 def carin_str(buf: bytes, off: int) -> str:
