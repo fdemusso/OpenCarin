@@ -60,9 +60,18 @@ but **field semantics are NOT verified** and must not be assumed.
 Verified on sample:
 * `D` is a **pointer to SECTION_1**, advances in steps of 6 (= S1 record size).
 * `A` (0x798C, 0x799A, 0x79B1, …) is a **pointer into SECTION_2**, monotonically non-decreasing.
-* `FLAGS` ∈ `{0x00,0x01,0x02,0x10,0x11}` → independent bit 4 and bit 0/1
-  (candidates: one-way / digitization direction). **UNCONFIRMED**.
-* `B` = `0xFF` in most records (sentinel "absent"), else small (`0x05,0x07,0x0A,0x13,0x15`).
+* `FLAGS` ∈ `{0x00,0x01,0x02,0x10,0x11,0x12}` (3 active bits: lo=bits[1:0] via `getbits(2)`, hi=bit4 via `getbits(1)<<4`).
+  Global distribution across 563 CF=1 blocks (218 k records): 0x00=67.1 %, 0x10=26.4 %, 0x01=4.5 %, 0x11=1.3 %, 0x02=0.6 %, 0x12=0.1 %.
+  **Working hypothesis (UNCONFIRMED):**
+  - bit 4 = 0 → **bidirectional** (traversable both ways); bit 4 = 1 → **one-way** (digitization direction only).
+    Evidence: city-centre parcels (Bologna ZTL, Torino centro) are predominantly 0x10; at the same intersection,
+    the main road is 0x00 while the side street is 0x10; 27 % one-way ≈ typical European urban mix.
+  - bits[1:0] = **access category**: 0x0=normal (93.5 %), 0x1=restricted/ramp (5.8 %),
+    0x2=non-motorised or ferry (0.7 %, correlated 94 % with B=3).
+  Requires cross-check vs. OSM or firmware bit-test trace to confirm direction semantics.
+* `B` ∈ `{1,2,3,4,5,6}` in CF=1 blocks (3-bit field, `getbits(3)`, inherited across records).
+  Distribution: B=1 43 %, B=4 19 %, B=5 15 %, B=3 14 %, B=2 6 %, B=6 3 %.
+  Functional class (road category); CF=0 blocks may also carry the sentinel value `0xFF` ("absent").
 * `C` = `0x0000` in `0x0E` blocks; in `0x0C` blocks it is an internal pointer to the
   name blob.
 
