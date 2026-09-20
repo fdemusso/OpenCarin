@@ -445,8 +445,11 @@ CF=1 blocks use a dedicated prefix encoder — see [`04-cf1-codec.md`](04-cf1-co
   (`high16` = segment, `low16` = offset within segment) or with a `u16` relative to
   the current block (used in `0x0C`/`0x0E` parcels).
 
-> **UNKNOWN**: the resolution of `NAME_PTR` high16 (segments `6C2E 9A30 F931 CA2F
-> 112E 12A6`) is not determined. It does not correspond to a `BLOCK_ID`.
+> **RESOLVED**: `NAME_PTR` `high16` corresponds to the lower 16 bits of a type `0x0D` `BLOCK_ID`.
+> - `NAME_PTR >> 16` gives the block ID (lower 16 bits). There are 10 `0x0D` blocks in sectors 17..406. For example, `0x9A30` maps to `BLOCK_ID` `0x00009A30` (sector 154).
+> - `NAME_PTR & 0xFFFF` gives the byte offset inside the uncompressed `0x0D` block.
+> - The `0x0D` block contains an 8-byte record at that offset: `>IHH` (`target_block_id`, `metadata`, `target_offset`).
+> - The target block (e.g., `0x0C`) contains the actual municipality/string data. The 44 country names are additionally cached in `0x0A` for faster UI rendering.
 
 ```python
 def carin_str(buf: bytes, off: int) -> str:
