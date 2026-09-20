@@ -26,7 +26,7 @@ geometry and semantics — not just labels and POIs.
 | 6 | Georeferencing of parcels `0x0C`/`0x0E`/`0x10` (via `0x0D`/`0x0F`/`0x11`) | ✅ **RESOLVED** — `find_parcel(vol, X, Y)` implemented; oracle 10/10 PASS 2026-09-19; index built from S2 `x_anc`/`y_anc`; 0x0D/0x0F/0x11 are TEXT lookup (address index), not spatial R-tree | — | `scripts/find_parcel.py`, `scripts/oracle_find_parcel.py` |
 | 7 | Mapping `BLOCK_TYPE → section_type[]` | not present in data (firmware-hardcoded) | 🟠 high | [`01-architecture.md`](01-architecture.md) §3.2 |
 | 8 | Resolution of `NAME_PTR` high16 (country table) | 6 unidentified segments | 🟡 medium | [`01-architecture.md`](01-architecture.md) §5 |
-| 9 | Order/role of the 5 `u16` in type `0x04` | UNKNOWN | 🟡 medium | [`03-road-network.md`](03-road-network.md) §6.4 |
+| 9 | Semantics of `0x04` block (house-number range index) | ✅ **RESOLVED** — 8-byte records (4×u16): f0/f2 = range [start,end] Side A, f1/f3 = range Side B; same-parity constraint; sentinel 0x7FFF; btst #0 parity-side select; fill-in; range search in `rpmod` subroutine `0x014134`; SERVICE_DATA → parent 0x00 tile. Verified firmware 2026-09-21 | — | [`03-road-network.md`](03-road-network.md) §6.4 |
 | 10 | Block checksum / CRC | **none found** | 🟢 no risk | — |
 
 ## Next concrete steps (highest leverage first)
@@ -65,7 +65,7 @@ geometry and semantics — not just labels and POIs.
 
 - `NAME_PTR` high16 segments `6C2E 9A30 F931 CA2F 112E 12A6` — not a BLOCK_ID ([`01-architecture.md`](01-architecture.md) §5).
 - Type `0x07` service quartet `F1198000 …` — not the geographic bbox ([`01-architecture.md`](01-architecture.md) §4.2).
-- Type `0x04` five `u16` fields — turn-cost matrix? unconfirmed ([`03-road-network.md`](03-road-network.md) §6.4).
+- Type `0x04` — **CLOSED** (2026-09-21): house-number range index; f0/f2 = Side A, f1/f3 = Side B; parity-split; sentinel 0x7FFF; subroutine `rpmod:0x014134`. See [`03-road-network.md`](03-road-network.md) §6.4.
 - `0x0E` `FLAGS` bit4 — **CLOSED** (firmware static analysis 2026-09-20): NOT a routing direction bit. No `btst #4` on FLAGS found in rpmod.asm; `can_traverse` ($4360) always returns 1 for 0x0E CF=1; one-way via OS-9 restriction tables. Best hypothesis: map-rendering category for pbp. bits[1:0] = access category still unconfirmed ([`03-road-network.md`](03-road-network.md) §6.3).
 - Type `0x00`–`0x03` node/edge/geometry field semantics — not verified ([`03-road-network.md`](03-road-network.md) §6.2).
 - DEFAULT_SPEED unit in country record (presumably 0.1 km/h) ([`01-architecture.md`](01-architecture.md) §4.4).

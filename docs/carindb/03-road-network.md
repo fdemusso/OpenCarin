@@ -104,7 +104,7 @@ PARCEL_S0_FMT = ">HBBHH"        # 8 bytes: A, FLAGS, B, C(name/aux ptr or 0), D(
 **Routing architecture** (from firmware): the routing engine (`rpmod`) and query
 engine (`dbq`) request ONLY `BLOCK_TYPE` `0x0E` (parcels), `0x10` (street names),
 and `0x12` (root). They **never** read `0x00`–`0x03` (those are `pbp` map-drawing)
-nor `0x04` (matrices). Thus **routing is NOT precalculated**: the firmware
+nor `0x04` (house-number index). Thus **routing is NOT precalculated**: the firmware
 reconstructs the network hierarchy, valid paths, and turn costs at runtime from the
 base `0x0E` topology.
 
@@ -217,17 +217,37 @@ parcel lookup — use `scripts/find_parcel.py` instead (index from S2 `x_anc`/`y
 > - **Truncation Vulnerability**: For sectors > 255 (4 out of 10 `0x0D` blocks in `NAV_DB_21708.ISO`), the upper byte of the sector is discarded. Resolving `NAME_PTR` without a pre-scanned lookup table of `0x0D` blocks is impossible.
 > - The record pointed to in `0x0D` links to an administrative `0x0C` parcel node. For UI display, human-readable country names are directly cached in `0x0A`.
 
-### 6.4 Type `0x04` (80,825 blocks) — 160-entry table
+### 6.4 Type `0x04` (80,825 blocks) — House Number Range Index ✅ RESOLVED 2026-09-21
 
 ```
-+0x08 SECTION_DESCRIPTOR[1] = {0x0010, 160}
-+0x0C SERVICE_DATA (4 bytes)
-+0x10 SECTION_0: 160 records of 10 bytes = 5 x u16
-      sentinel value "undefined" = 0x7FFF
++0x08 SECTION_DESCRIPTOR[1] = {0x0010, N}    ; N = record count (varies per block)
++0x0C SERVICE_DATA = BLOCK_ID of associated 0x00 map tile (4 bytes)
++0x10 SECTION_0: N records of 8 bytes = 4 × u16
+      [f0 f1 f2 f3]  sentinel = 0x7FFF ("no houses on this side")
 ```
-First sampled block: 22 records all `7FFF 7FFF 7FFF 7FFF 0000` then small values
-(`000B 000E 000D 0010 0002`). Size and sentinel verified; **meaning of the 5 fields
-UNKNOWN** (candidates: turn-cost matrix / road classes, unconfirmed).
+
+**Field semantics** (verified from rpmod.asm subroutine `0x014134`):
+
+| Field | Meaning |
+|---|---|
+| `f0` | House number range start, Street Side A |
+| `f2` | House number range end, Street Side A |
+| `f1` | House number range start, Street Side B |
+| `f3` | House number range end, Street Side B |
+
+- Side A and Side B correspond to the two sides of the street segment.
+- `f0` and `f2` always share the same parity (both odd, or both even); same for `f1`/`f3`.
+- `btst #$0` on the query house number selects which parity side to search.
+- Fill-in rule: if `f0 = 0x7FFF` → `f0 := f2`; if `f2 = 0x7FFF` → `f2 := f0` (symmetric default); same for `f1`/`f3`.
+- Range check: `min(f0,f2) ≤ query ≤ max(f0,f2)` → returns byte offset of the matched street segment record in the associated `0x00` primary block.
+
+**Firmware evidence:**
+- `rpmod.asm` factory-default subroutine `0x01af8a`, line 31577: `move.w #$8, -$7e7a(a6)` — record size = 8 bytes.
+- Subroutine `0x014134` (lines 22792–22952): full range-lookup implementation; parity check at `0x014226`; fill-in at lines 22840–22859; min/max at 22882–22895; range test at 22937–22952.
+- Wrapper `0x013272` (line 21640): copies house-number query from `$42(a7)` → local struct offset `$1e` (`0x01329c`), then calls `0x01456c` → `0x014658` → `bsr $14134`.
+- Empirical check: all high-range field values sampled from sector 5781092 (95, 103, 105, 109, 111, 113) are ODD integers — consistent with one side of an odd-numbered street.
+
+**Linkage**: each `0x04` block is linked to its parent `0x00` map-tile block via `SERVICE_DATA` at `+0x0C`. The routing engine (`rpmod`) uses this block to resolve a house-number query to the byte offset of the street segment record inside the map tile.
 
 ### 6.5 Type `0x06` (2,688 blocks) — POI
 
