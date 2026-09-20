@@ -62,28 +62,33 @@ Verified on sample:
 * `A` (0x798C, 0x799A, 0x79B1, …) is a **pointer into SECTION_2**, monotonically non-decreasing.
 * `FLAGS` ∈ `{0x00,0x01,0x02,0x10,0x11,0x12}` (3 active bits: lo=bits[1:0] via `getbits(2)`, hi=bit4 via `getbits(1)<<4`).
   Global distribution across 563 CF=1 blocks (218 k records): 0x00=67.1 %, 0x10=26.4 %, 0x01=4.5 %, 0x11=1.3 %, 0x02=0.6 %, 0x12=0.1 %.
-  **Working hypothesis (UNCONFIRMED):**
-  - bit 4 = 0 → **bidirectional** (traversable both ways); bit 4 = 1 → **one-way** (digitization direction only).
-    Evidence: city-centre parcels (Bologna ZTL, Torino centro) are predominantly 0x10; at the same intersection,
-    the main road is 0x00 while the side street is 0x10; 27 % one-way ≈ typical European urban mix.
+  **Hypothesis "bit4 = one-way": FALSIFIED by full firmware static analysis (2026-09-20).**
+  - bit4 = 0 → bidirectional; bit4 = 1 → one-way: **NOT CONFIRMED**. Spatial correlation with
+    ZTL/city-centre roads is consistent with "high-restriction category" but does not prove direction.
   - bits[1:0] = **access category**: 0x0=normal (93.5 %), 0x1=restricted/ramp (5.8 %),
-    0x2=non-motorised or ferry (0.7 %, correlated 94 % with B=3).
-  Requires cross-check vs. OSM or firmware bit-test trace to confirm direction semantics.
-  **Firmware evidence (2026-09-20):** `can_traverse` (`rpmod+$4360`) does NOT test FLAGS for
-  routing decisions — it reads `block[D+0x10]` and `block[D+0x11]`, which are always `0x00`
-  for `0x0E` CF=1 blocks (S1 records are 6 bytes; offset +16 falls in padding/next-section).
-  As a result, the function always returns 1 (traversable) for all `0x0E` arcs.
-  FLAGS is instead used in cost/penalty calculation (`rpmod+$6eae`: arc value × `0x3C00`).
-  Direction enforcement for `0x0E` is likely implicit in graph topology (arc A→B vs B→A),
-  not a binary flag on each arc. GeoJSON visual analysis and OSM overlay still required.
+    0x2=non-motorised or ferry (0.7 %, correlated 94 % with B=3). Still unconfirmed but plausible.
+  **Firmware evidence — complete static analysis of rpmod (2026-09-20):**
+  - `can_traverse` (`rpmod+$4360`): reads `block[D+0x10]` / `block[D+0x11]`, always `0x00` for
+    `0x0E` CF=1 blocks → always returns 1 (traversable). FLAGS NOT READ.
+  - `rpmod+$6eae` (cost function for `0x0E`): calls `jsr -$7240(a6)` to retrieve an attribute list,
+    searches for `element[1]==5`, returns `element[2] × 0x3C00`. FLAGS NOT READ. (The earlier note
+    "arc value × 0x3C00" incorrectly attributed the multiplied value to FLAGS; it is `element[2]`
+    from an OS-9 attribute list — identity of `element` TBD.)
+  - `rpmod+$66de` (neighbour expansion): two `btst #4` tests found ($698a, $6a5a), but both operate
+    on NODE DESCRIPTOR fields — one on output of `jsr -$7258(a6)` (OS-9 restriction-table query),
+    one on a propagated routing-state bit. No `btst #4` on the S0 FLAGS byte (offset +2) found
+    anywhere in rpmod.asm.
+  **Result: FLAGS bit4 has NO confirmed routing effect in the analyzed firmware.**
+  Direction enforcement (one-way restriction) is NOT implemented via FLAGS bit4. It likely comes
+  from OS-9 restriction/turn tables queried via `jsr -$7258(a6)` / `jsr -$724c(a6)`, not from the
+  arc FLAGS field. FLAGS bit4 may be a map-rendering category (road importance/direction for pbp)
+  rather than a routing control bit. OSM visual overlay may clarify its cartographic meaning.
   **Twin-arc test (2026-09-20, `scripts/test_twin_arcs.py`, 50 blocks / 1915 arcs):**
-  Cross-block global twin rate (reverse-geometry arc in same or neighbouring parcel):
-  0x00 = 21.5 %, 0x10 = 22.1 %, delta = −0.7 % (within-block: 4.5 % vs 11.1 %, delta = −6.6 %).
-  **Result: SMENTITO (paired-arc model).** Both FLAGS values have statistically identical twin
-  rates, proving arcs are stored individually (one arc per road segment) regardless of direction.
-  The "direction = topology" model (arc A→B and B→A both stored) is false. FLAGS bit4 direction
-  semantics remain open — the constraint is NOT expressed through paired arc storage; likely a
-  routing-engine flag consumed at `rpmod+$6eae` or an undiscovered cost-path function.
+  Cross-block global twin rate: 0x00 = 21.5 %, 0x10 = 22.1 %, delta = −0.7 %.
+  **Result: SMENTITO (paired-arc model).** Arcs stored once per segment regardless of FLAGS value.
+  The "direction = topology" model is false. FLAGS bit4 constraint is NOT expressed through paired
+  arc storage and NOT through any btst #4 in routing code — semantics remain OPEN (best hypothesis:
+  map-rendering / road-category flag, not a routing direction bit).
 * `B` ∈ `{1,2,3,4,5,6}` in CF=1 blocks (3-bit field, `getbits(3)`, inherited across records).
   Distribution: B=1 43 %, B=4 19 %, B=5 15 %, B=3 14 %, B=2 6 %, B=6 3 %.
   Functional class (road category); CF=0 blocks may also carry the sentinel value `0xFF` ("absent").
