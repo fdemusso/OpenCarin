@@ -265,9 +265,116 @@ parameterizes the CF=1 decoder** — see [`04-cf1-codec.md`](04-cf1-codec.md) §
 59:0x04  5A:0x02  8A:0x01  97:0x10  9D:0x16
 ```
 
-> **UNKNOWN**: the mapping `BLOCK_TYPE → list of section_types` was not found in
-> any block. The firmware hardcodes it. Actual record sizes were derived
-> empirically (see [`03-road-network.md`](03-road-network.md) §6) and are the primary reference.
+> **PARTIALLY RECOVERED**: the firmware-hardcoded mapping `BLOCK_TYPE → list
+> of section_types` was recovered from CF=1 firmware T[] layout-table reads
+> (CC-93 `pbp`, Mk3/RR MIPS `db_pub`) cross-checked against RST values and CF=0
+> empirical measurements. See §3.2.1 below. Types not covered by the CF=1 codec
+> (0x06, 0x09, 0x0C, 0x10) are documented empirically in
+> [`03-road-network.md`](03-road-network.md) §6.
+
+### 3.2.1 `BLOCK_TYPE → section_type[]` (recovered from firmware)
+
+**Verification rule**: every confirmed row requires ≥ 2 independent sources
+(firmware T[] reference + RST cross-check + optional empirical). Unverified
+entries are marked `[HYP]`.
+
+#### BLOCK_TYPE `0x00` — map drawing (CF=1 / CF=0)
+
+N = 15 descriptor entries (`e0..e14`) in DB-REL 34; 13 in CC-93 (`e0..e12`).
+Bbox at offset `0x44`. Source: `docs/fw/mips_decode_type00.asm`,
+`docs/fw/mips_dec_B.asm`, `carin/parser/cf1.py`.
+
+| slot | section_type | record_size | sources |
+|---|---:|---:|---|
+| prologue (verbatim) | `0x0b` | 116 B | MIPS `T[0x0b]`, RST[0x0b]=116, empirical |
+| S0 (`e0`) | `0x40` | 10 B | MIPS `T[0x40]`, RST[0x40]=10, CF=0 empirical |
+| S1 (`e1`) | `0x40` | 10 B | (same T-entry, shared section_type) |
+| S2 (`e2`) | `0x40` | 10 B | (same T-entry, shared section_type) |
+| S3 (`e3`) | `0x12` | 4 B | MIPS `T[0x12]`, RST[0x12]=4, CF=0 empirical |
+| S4 (`e4`) | `0x08` | 32 B | MIPS `T[0x08]`, RST[0x08]=32, CF=0 empirical |
+| S5 (`e5`) | `0x10` | 8 B | MIPS `T[0x10]`, RST[0x10]=8, CF=0 empirical |
+| S6 (`e6`) | `0x06` | 16 B | MIPS `T[0x06]`, RST[0x06]=16, CF=0 empirical |
+| S7 (`e7`) | `0x0c` | 6 B | MIPS `T[0x0c]`, RST[0x0c]=6, CF=0 empirical |
+| S8 (`e8`) | — | — | no firmware reference found |
+| S9 (`e9`) | `0x0f` | 8 B | MIPS `T[0x0f]`, RST[0x0f]=8, CF=0 empirical |
+| S10 (`e10`) | `0x14` | 8 B | MIPS `T[0x14]`, RST[0x14]=8, CF=0 empirical |
+| S11 (`e11`) | `0x13` | 6 B | MIPS `T[0x13]`, RST[0x13]=6, CF=0 empirical |
+| S12 (`e12`) | `0x15` | 6 B | MIPS `T[0x15]`, RST[0x15]=6, CF=0 empirical |
+| S13 (`e13`) | `0x4c` | 8 B | MIPS `T[0x4c]`, RST[0x4c]=8; DB-REL ≥ 21 |
+| S14 (`e14`) | `0x59` | 4 B | `cf1.py` `T_REC_S14=0x59`, RST[0x59]=4; DB-REL ≥ 23 |
+
+Structural T-table entries used by the type `0x00` CF=1 decoder (not section
+record sizes): `0x05`=8 (descriptor base offset), `0x09`=26 (S4 tail-field
+offset), `0x11`=60 (internal width).
+
+#### BLOCK_TYPE `0x0E` — road parcels (CF=1 / CF=2)
+
+N = 4 descriptor entries (`e0..e3`). No bbox. Source: `docs/fw/pbp_0x0E_decoder.asm`,
+`carin/parser/cf1.py`, `scripts/oracle_0e.py` (67/67 blocks validated).
+
+| slot | section_type | record_size | sources |
+|---|---:|---:|---|
+| prologue (verbatim) | `0x2b` | 48 B | firmware `T[0x2b]`, RST[0x2b]=48 |
+| S0 (`e0`) | `0x2d` | 8 B | firmware `T[0x2d]`, RST[0x2d]=8, CF=1 empirical |
+| S1 (`e1`) | `0x41` | 6 B | firmware `T[0x41]`, RST[0x41]=6, CF=1 empirical |
+| S2 (`e2`) | `0x42` | 24 B | firmware `T[0x42]`, RST[0x42]=24, CF=1 empirical |
+
+S2 record layout: `+0` i32 x_anc; `+4` i32 y_anc; `+8..+14` 4×u16 raw_delta;
+`+16` i32 anchor_f2; `+20` u16 val1; `+22` u16 val2. See `03-road-network.md` §6.3.1.
+
+#### BLOCK_TYPE `0x14` / `0x15` / `0x16` — geo labels (CF=1 / CF=0)
+
+N = 6 descriptor entries (`e0..e5`). Bbox at offset `0x20`. All three types share
+the decoder at `pbp+0x46aa`. Source: `carin/parser/cf1.py`, CC-93 `pbp`,
+`scripts/oracle_14_16.py` (1,958/1,958 S1 records with X/Y in European range ✅).
+
+| slot | section_type | record_size | sources |
+|---|---:|---:|---|
+| prologue (verbatim) | `0x3d` | 52 B | `T_PROLOG_141516=0x3d`, `pbp+0x46b6`, RST[0x3d]=52 |
+| S0 (`e0`) | `0x3b` | 4 B | `T_REC_S0_141516=0x3b`, `pbp+0x46f4`, RST[0x3b]=4, CF=0 empirical |
+| S1 / geo (`e1`) | `0x3a` | 20 B | `T_REC_S1_141516=0x3a`, `pbp+0x4712`, RST[0x3a]=20, oracle ✅ |
+| S2 (`e2`) | `0x3c` | 16 B | `T_REC_S2_141516=0x3c`, `pbp+0x4732`, RST[0x3c]=16, CF=1 empirical |
+| S3 (`e3`) | — | 4 or 8 B | record size selected at decode time via `T[0x3f]`; section_type not determined |
+| S4 (`e4`) | — | — | CF=0 blocks show `cnt=0` |
+| S5 (`e5`) | — | text | name blob (variable-length Latin-1 strings) |
+
+`T[0x3f]`=24 (`T_S3_DISP_141516`) is a structural parameter selecting S3's
+record-kind (`kind=0x09` → 4 B, `kind=0x0a` → 8 B); it is not a section record
+size. S1 records carry `NAME_PTR(u16)`, `ptr_s3(u16)`, `UNKNOWN(u32)`, `X(i32)`,
+`Y(i32)`, `UNKNOWN(u16)`, `ptr(u16)` — see `02-geo.md` §8.2 for the full layout.
+
+#### Types with empirical record sizes only (no CF=1 decoder — `[HYP]`)
+
+| BLOCK_TYPE | slot | section_type | record_size | notes |
+|---|---|---|---:|---|
+| `0x06` POI | S0 (`e0`) | `[HYP]` 0x04/0x18/0x32/0x43/0x4e | 28 B | `02-geo.md` §8.1 verified; RST has 5 candidates for 28 B |
+| `0x0C` | S0 (`e0`) | `[HYP]` many | 8 B | CF=2 empirical; 15 RST candidates |
+| `0x0C` | S1 (`e1`) | `[HYP]` 0x1f/0x42/0x56 | 24 B | CF=2 empirical; 4 RST candidates |
+| `0x0C` | S3 (`e3`) | `[HYP]` many | 12 B | CF=2 empirical; 7 RST candidates |
+| `0x10` | S0 (`e0`) | `[HYP]` many | 8 B | CF=2 empirical |
+| `0x10` | S1 (`e1`) | `[HYP]` 0x2f/0x51 | 40 B | CF=2 empirical; 2 RST candidates |
+| `0x09` | S0 (`e0`) | `[HYP]` many | 4 B | CF=0 empirical |
+| `0x09` | S1 (`e1`) | — | ~488 B | CF=0 empirical; no RST match (variable-length blob) |
+
+#### Unassigned section_type IDs
+
+Of the 93 RST entries, **24 are confirmed** (or confirmed-structural) above;
+**69 have no block_type assignment** yet:
+
+```
+01(12) 02(16) 03(8)  04(28) 07(8)  0a(6)  0d(4)  0e(48)
+11(60) 16(6)  17(372) 18(28) 19(352) 1a(12) 1b(96) 1c(84)
+1d(4)  1e(8)  1f(24) 20(56) 21(16) 22(4)  23(4)  24(4)
+25(20) 26(4)  27(8)  28(12) 29(12) 2a(4)  2c(8)  2e(32)
+2f(40) 30(12) 31(8)  32(28) 33(32) 34(16) 35(8)  36(16)
+37(10) 38(4)  39(4)  3e(20) 43(28) 44(4)  45(16) 46(100)
+47(16) 48(4)  49(4)  4a(8)  4b(20) 4d(12) 4e(28) 4f(4)
+50(16) 51(40) 52(16) 53(4)  54(4)  55(8)  56(24) 57(12)
+58(4)  5a(2)  8a(1)  97(16) 9d(22)
+```
+
+Format: `ID(size_in_bytes)`. Likely block type candidates for some IDs are noted
+in `03-road-network.md` §6 (road parcels) and `02-geo.md` §8 (geo records).
 
 ### 3.3 Python Struct — Superblock
 
