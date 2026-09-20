@@ -69,6 +69,13 @@ Verified on sample:
   - bits[1:0] = **access category**: 0x0=normal (93.5 %), 0x1=restricted/ramp (5.8 %),
     0x2=non-motorised or ferry (0.7 %, correlated 94 % with B=3).
   Requires cross-check vs. OSM or firmware bit-test trace to confirm direction semantics.
+  **Firmware evidence (2026-09-20):** `can_traverse` (`rpmod+$4360`) does NOT test FLAGS for
+  routing decisions — it reads `block[D+0x10]` and `block[D+0x11]`, which are always `0x00`
+  for `0x0E` CF=1 blocks (S1 records are 6 bytes; offset +16 falls in padding/next-section).
+  As a result, the function always returns 1 (traversable) for all `0x0E` arcs.
+  FLAGS is instead used in cost/penalty calculation (`rpmod+$6eae`: arc value × `0x3C00`).
+  Direction enforcement for `0x0E` is likely implicit in graph topology (arc A→B vs B→A),
+  not a binary flag on each arc. GeoJSON visual analysis and OSM overlay still required.
 * `B` ∈ `{1,2,3,4,5,6}` in CF=1 blocks (3-bit field, `getbits(3)`, inherited across records).
   Distribution: B=1 43 %, B=4 19 %, B=5 15 %, B=3 14 %, B=2 6 %, B=6 3 %.
   Functional class (road category); CF=0 blocks may also carry the sentinel value `0xFF` ("absent").

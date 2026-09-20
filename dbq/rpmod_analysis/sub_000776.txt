@@ -1,0 +1,19 @@
+000776: 4e550000     link.w     a5, #$0
+00077a: 48e78080     movem.l    d0/a0, -(a7)
+00077e: 4eae8c3a     jsr        -$73c6(a6)
+000782: 4a80         tst.l      d0
+000784: 670c         beq.b      $792
+000786: 4eae8c3a     jsr        -$73c6(a6)
+00078a: 2040         movea.l    d0, a0
+00078c: 4a280008     tst.b      $8(a0)
+000790: 660e         bne.b      $7a0
+000792: 2017         move.l     (a7), d0
+000794: 61000ef8     bsr.w      $168e
+000798: 4a00         tst.b      d0
+00079a: 6704         beq.b      $7a0
+00079c: 7001         moveq      #$1, d0
+00079e: 6002         bra.b      $7a2
+0007a0: 7000         moveq      #$0, d0
+0007a2: 4ced0100fffc movem.l    -$4(a5), a0
+0007a8: 4e5d         unlk       a5
+0007aa: 4e75         rts
