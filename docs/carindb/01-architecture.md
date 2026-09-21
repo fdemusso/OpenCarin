@@ -378,13 +378,14 @@ size. S1 records carry `NAME_PTR(u16)`, `ptr_s3(u16)`, `UNKNOWN(u32)`, `X(i32)`,
 | BLOCK_TYPE | slot | section_type | record_size | notes |
 |---|---|---|---:|---|
 | `0x06` POI | S0 (`e0`) | `[HYP]` 0x04/0x18/0x32/0x43/0x4e | 28 B | `02-geo.md` §8.1 verified; RST has 5 candidates for 28 B |
-| `0x0C` | S0 (`e0`) | `[HYP]` many | 8 B | CF=2 empirical; 15 RST candidates |
-| `0x0C` | S1 (`e1`) | `[HYP]` 0x1f/0x42/0x56 | 24 B | CF=2 empirical; 4 RST candidates |
-| `0x0C` | S3 (`e3`) | `[HYP]` many | 12 B | CF=2 empirical; 7 RST candidates |
+| `0x0C` | S0 (`e0`) | *confirmed* | 8 B | CF=2; Array of Bounding Boxes (Xmin, Ymin, Xmax, Ymax) |
+| `0x0C` | S1 (`e1`) | *confirmed* | 24 B | CF=2; Road parcels (16B metadata + 8B local BBox) |
+| `0x0C` | S3 (`e3`) | *confirmed* | 12 B | CF=2; Topology/Relation references |
+| `0x0C` | S5 (`e5`) | *confirmed* | text | CF=2; String Blob (Latin-1 null-terminated) referenced by byte offset |
 | `0x10` | S0 (`e0`) | `[HYP]` many | 8 B | CF=2 empirical |
 | `0x10` | S1 (`e1`) | `[HYP]` 0x2f/0x51 | 40 B | CF=2 empirical; 2 RST candidates |
 | `0x09` | S0 (`e0`) | `[HYP]` many | 4 B | CF=0 empirical |
-| `0x09` | S1 (`e1`) | — | ~488 B | CF=0 empirical; no RST match (variable-length blob) |
+| `0x09` | S1 (`e1`) | - | ~488 B | CF=0 empirical; no RST match (variable-length blob) |
 
 #### Unassigned section_type IDs
 
@@ -619,3 +620,8 @@ def encode_carin_str(s: str) -> bytes:
 | `0x14`, `0x1C`, `0x1D`, `0x1E` | seas, oceans, regions, major cities (multilingual) |
 | `0x06` | POI brands |
 | `0x07`, `0x0A` | country names |
+
+## Note on 0x00 vs 0x0E Geometry
+The database splits the road network into two distinct layers to save runtime memory:
+1. **0x0E (Routing Graph)**: Contains topology (nodes, edges, turn restrictions) and crude spatial extents (local bounding boxes) for the A* pathfinding algorithm. It does not store smooth polylines.
+2. **0x00 (Map Drawing)**: Contains the high-resolution, continuous polylines for actual map rendering on the LCD. Loaded dynamically only for regions currently on screen.

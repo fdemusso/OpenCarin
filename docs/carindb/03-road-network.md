@@ -260,3 +260,9 @@ parcel lookup — use `scripts/find_parcel.py` instead (index from S2 `x_anc`/`y
 `X_max − X_min == Y_max − Y_min` always, and always `98304 · 2^k` → **quadtree grid**.
 Observed sides: 98,304 / 196,608 / 393,216 / 786,432 / 1,572,864 / 3,145,728.
 Full POI record layout → [`02-geo.md`](02-geo.md) §8.1.
+
+## Discovery: Dual-Graph Architecture (Routing vs Display)
+> **CRITICAL NOTE (2026-09-22):** Section 2 of 0x0E blocks DOES NOT contain high-resolution map drawing geometry (polylines).
+> Instead, it contains simplified routing heuristic segments or local bounding boxes used exclusively by the A* routing engine.
+> Plotting S2 points yields millions of disconnected diagonal 'dashes' corresponding to the spatial extents of edges.
+> The actual beautiful, high-resolution curved road polylines are stored entirely separately in 0x00 (map drawing) blocks, which are processed only for rendering.
