@@ -328,7 +328,9 @@ def decode_s2_coords(decoded: bytes, table: dict[int, int],
     s2_rec = table[T_REC_S2_0E]
     e2_off, e2_cnt = struct.unpack_from(">HH", decoded, base_d + 8)
 
-    # M_hi dal pre-header, scritto a decoded[7] da decode_block per i blocchi 0x0E
+    # M_hi dal pre-header, scritto a decoded[7] da decode_block per i blocchi 0x0E (CF=1)
+    # in CF=2, decoded[6] = 2 (compression flag), decoded[7] = usize
+    cf = decoded[6]
     M_hi = decoded[7] or 1
     thresh = (1 << M_hi) - 1
 
@@ -342,16 +344,20 @@ def decode_s2_coords(decoded: bytes, table: dict[int, int],
         b = e2_off + i * s2_rec
         x_anc = struct.unpack_from(">i", decoded, b + 0)[0]
         y_anc = struct.unpack_from(">i", decoded, b + 4)[0]
-        d = struct.unpack_from(">HHHH", decoded, b + 8)
+        d_unsigned = struct.unpack_from(">HHHH", decoded, b + 8)
 
-        if all(v == 0x7FFF for v in d):
+        if all(v == 0x7FFF for v in d_unsigned):
             result.append(None)
         else:
-            w = [16 if v > thresh else M_hi for v in d]
-            dx1 = _sx(d[0], w[0])
-            dy1 = _sx(d[1], w[1])
-            dx2 = _sx(d[2], w[2])
-            dy2 = _sx(d[3], w[3])
+            if cf == 2:
+                # CF=2 usa zlib: deltas sono interi 16-bit signed
+                dx1, dy1, dx2, dy2 = struct.unpack_from(">hhhh", decoded, b + 8)
+            else:
+                w = [16 if v > thresh else M_hi for v in d_unsigned]
+                dx1 = _sx(d_unsigned[0], w[0])
+                dy1 = _sx(d_unsigned[1], w[1])
+                dx2 = _sx(d_unsigned[2], w[2])
+                dy2 = _sx(d_unsigned[3], w[3])
             result.append((
                 (x_anc + dx1, y_anc + dy1),
                 (x_anc + dx2, y_anc + dy2),
