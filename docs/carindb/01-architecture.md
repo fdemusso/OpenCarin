@@ -205,28 +205,44 @@ database *schema*.
 00000006: 00 00       COMPRESSION_FLAG=0, UNCOMPRESSED_SIZE=0
 00000008: 0060 0001   SECTION_DESCRIPTOR[0] = { offset 0x0060, count 1 }
 
---- SERVICE_DATA 0x0C .. 0x5F : list of first-level index blocks ---
-0000000C: 0000 0801   BLOCK_ID  -> sector 8,  1 sector   (type 0x0B, alphabetical index)
-00000010: 000C 0012   copy of that block's SECTION_DESCRIPTOR { 0x000C, 18 }
-00000014: 0000 0201   BLOCK_ID  -> sector 2,  1 sector   (type 0x13, CD info)
-00000018: 0001 0022   RESERVED (4 bytes)
-0000001C: 0000 000C   RESERVED (4 bytes)
-00000020: 0001 0060   RESERVED (4 bytes)
-00000024: 0068 001F   RESERVED (4 bytes)
-00000028: 00A6 005D   RESERVED (4 bytes)
-0000002C: 0200 0001   RESERVED (4 bytes)
-00000030: 0000 0000   RESERVED (4 bytes)
-00000034: 0063 5FAC   RESERVED (4 bytes)   \  identical to field at 0x50
-00000038: 0926 F69C   RESERVED (4 bytes)   /
-0000003C: 36AF 692D   RESERVED (4 bytes)
-00000040: 1756 9F41   RESERVED (4 bytes)
-00000044: 0000 0701   BLOCK_ID  -> sector 7,  1 sector   (type 0x0B, alphabetical index #2)
-00000048: 000C 0012   copy of SECTION_DESCRIPTOR { 0x000C, 18 }
-0000004C: 021C 0019   RESERVED (4 bytes)
-00000050: 0063 5FAC   RESERVED (4 bytes)   \  identical to field at 0x34
-00000054: 0926 F69C   RESERVED (4 bytes)   /
-00000058: 102D 96F6   RESERVED (4 bytes)
-0000005C: 1424 A443   RESERVED (4 bytes)
+--- SERVICE_DATA 0x0C .. 0x5F (Array of 8-byte structs: `{u32 BLOCK_ID, u16 offset, u16 count}`) ---
+0000000C: 0000 0801   BLOCK_ID  -> sector 8, 1 sector   (type 0x0B, alphabetical index)
+00000010: 000C        offset (0x0C)
+00000012: 0012        count  (18)
+00000014: 0000 0201   BLOCK_ID  -> sector 2, 1 sector   (type 0x13, CD info)
+00000018: 0001        offset (0x01)
+0000001A: 0022        count  (34) -> **Hijacked by `rpmod` as `DB-REL`!**
+0000001C: 0000 000C   BLOCK_ID  -> sector 0, length 12
+00000020: 0001        offset (1)
+00000022: 0060        count  (96)
+00000024: 0068 001F   BLOCK_ID  -> sector 104, length 31
+00000028: 00A6        offset (0xA6) -> **Hijacked by `rpmod` as RST Start Offset!**
+0000002A: 005D        count  (0x5D) -> **Hijacked by `rpmod` as RST Entry Count!**
+0000002C: 0200 0001   BLOCK_ID  -> sector 512, length 1
+00000030: 0000        offset (0)
+00000032: 0000        count  (0)
+00000034: 0063 5FAC   BLOCK_ID  (identical to 0x50)
+00000038: 0926        offset
+0000003A: F69C        count 
+0000003C: 36AF 692D   BLOCK_ID
+00000040: 1756        offset
+00000042: 9F41        count
+00000044: 0000 0701   BLOCK_ID  -> sector 7, 1 sector   (type 0x0B, alphabetical index #2)
+00000048: 000C        offset
+0000004A: 0012        count
+0000004C: 021C 0019   BLOCK_ID
+00000050: 0063 5FAC   BLOCK_ID  (identical to 0x34)
+00000054: 0926        offset
+00000056: F69C        count
+00000058: 102D 96F6   BLOCK_ID
+0000005C: 1424        offset
+0000005E: A443        count
+
+> **FIRMWARE INSIGHT (0x12 ROOT BLOCK)**: 
+> The `SERVICE_DATA` is actually an array of 8-byte structures (`{u32 BLOCK_ID, u16 offset, u16 count}`). This struct layout is defined by a C-struct `GlobalBlockHeader` shared with other directory blocks (like `0x08`).
+> The routing engine (`rpmod.asm:01b122` and clones in `dbq`, `dbpa`, `pbp`) accesses this block **exclusively** to read the `DB-REL` and the Record Size Table (RST). It reads `DB-REL` via a hardcoded offset at `+0x1A`. It reads the RST offset/count at `+0x28` / `+0x2A`. 
+> All other fields in this array (e.g. `+0x1C`, `+0x24`, `+0x2C..+0x5F`) are **DEAD DATA** (ignored compiler artifacts from the shared struct) and are never read by the query engine.
+> Furthermore, `rpmod` adds the `+0x28` offset (`0x00A6`) directly to the base pointer, completely **bypassing** `SECTION_0` at `+0x60`. `SECTION_0` and the `BLOCK_TYPE_LIST` are not parsed by the routing engine's RST override logic.
 
 --- SECTION_0 @ 0x0060 (1 record, variable length) ---
 00000060: 0000 0304   BLOCK_ID  -> sector 3, 4 sectors    (type 0x07, Country Info)
@@ -550,6 +566,15 @@ def parse_country(d, off):
       first_id(u24) | count(u8) | limit(u16) | group(u8) | 0(u8)
 ```
 `group` = 0,1,2,3,4,5,6,7,0x0A,0x0C,0x0F,0x11 → language / text family index.
+
+### 4.6 `0x0C` — Administrative Parcel (CF=2 zlib)
+
+The `0x0C` block contains administrative region geometry and localized toponyms, decompressed generically via zlib. It is actively requested and processed by the query engine (`dbc.asm:001c38` requests block type `0x0C` explicitly).
+
+*   **S0 (8 bytes/record)**: Serves as a translation layer mapping the `C` field logical IDs (from `0x0E` S0 records) to metadata or node references.
+*   **S1 (24 bytes/record)**: Hypothesis based on dimensions: represents the administrative hierarchy (e.g. Region -> City -> District). The 24-byte size suggests an OS-9 tree-node struct.
+*   **S3 (12 bytes/record)**: Localized name mapping / metadata.
+*   **Name Blob**: The final section of the block (likely S4 or S5) is hypothesized to hold the actual null-terminated string bytes, mirroring the structure used in `0x0E`.
 
 ---
 
