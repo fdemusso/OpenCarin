@@ -51,6 +51,10 @@ def main():
         'properties': {'sector': 'int'}
     }
 
+    # Add SQLite PRAGMAs for massive speedup in GPKG creation (WAL mode, async)
+    import os
+    os.environ['OGR_SQLITE_PRAGMA'] = 'synchronous=OFF,journal_mode=WAL,cache_size=10000'
+
     # Open Fiona connection to write the GeoPackage
     with fiona.open(
         args.out,
@@ -61,6 +65,8 @@ def main():
     ) as layer:
         
         total_arcs = 0
+        batch = []
+        BATCH_SIZE = 50_000
         
         for i, sec in enumerate(sectors):
             if i > 0 and i % 500 == 0:
@@ -82,7 +88,7 @@ def main():
                     lon1, lat1 = carin_to_lonlat(pt1[0], pt1[1])
                     lon2, lat2 = carin_to_lonlat(pt2[0], pt2[1])
                     
-                    feature = {
+                    batch.append({
                         'geometry': {
                             'type': 'LineString',
                             'coordinates': [(lon1, lat1), (lon2, lat2)]
@@ -90,12 +96,19 @@ def main():
                         'properties': {
                             'sector': sec
                         }
-                    }
-                    layer.write(feature)
+                    })
                     total_arcs += 1
                     
+                    if len(batch) >= BATCH_SIZE:
+                        layer.writerecords(batch)
+                        batch.clear()
+                        
             except Exception as e:
                 print(f"Warning: Failed to decode sector {sec}: {e}")
+                
+        # Write any remaining features
+        if batch:
+            layer.writerecords(batch)
 
     print(f"Done! Exported {total_arcs} road segments to {args.out}.")
 
