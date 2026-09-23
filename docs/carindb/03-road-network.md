@@ -3,7 +3,7 @@
 > **Status: ✅ VERIFIED (STEP 2 & 3 complete, 2026-09-19).** Block/section structure
 > AND field semantics for `0x0E` are fully verified from firmware traces. Spatial
 > lookup via `find_parcel(vol, X, Y)` oracle 10/10 PASS. `0x0D`/`0x0F`/`0x11` = TEXT
-> address-lookup index (not spatial). Types `0x00`–`0x03` field semantics still UNKNOWN.
+> address-lookup index (not spatial). Type `0x00` field semantics are now KNOWN (map drawing). Types `0x01`–`0x03` are assumed identical.
 >
 > Source: `../CARINDB_BLUEPRINT_EN.md` §6. Related: CF=1 decoding for these types →
 > [`04-cf1-codec.md`](04-cf1-codec.md); open goals → [`06-objectives-roadmap.md`](06-objectives-roadmap.md).
@@ -266,3 +266,35 @@ Full POI record layout → [`02-geo.md`](02-geo.md) §8.1.
 > Instead, it contains simplified routing heuristic segments or local bounding boxes used exclusively by the A* routing engine.
 > Plotting S2 points yields millions of disconnected diagonal 'dashes' corresponding to the spatial extents of edges.
 > The actual beautiful, high-resolution curved road polylines are stored entirely separately in 0x00 (map drawing) blocks, which are processed only for rendering.
+
+### 6.6 Type `0x00` (91,756 blocks) — High-Resolution Map Geometry ✅ RESOLVED 2026-09-22
+
+The `0x00` block holds the precise geometries for rendering the map, but it does NOT store them as a flat array of contiguous polylines.
+
+**Coordinate Scaling:**\nJust like `0x06` POI blocks, `0x00` blocks use a fixed scale multiplier of `64.0`. (Previous theories about dynamic scaling via `ctx.widths` were incorrect; those bytes dictate bitstream extraction widths, not geometric scale).\n
+**Section 4 (Spatial Tree):**
+S4 is a **BSP/QuadTree**, not a flat line array. Traversing it sequentially creates massive zigzag artifacts.
+- `+0x04` (u16): Pointer/index into Section 7 (starts a coordinate sequence).
+- `+0x06` (u16): Pointer/index to the Left Child S4 record.
+- `+0x08` (u16): Pointer/index to the Right Child S4 record.
+
+**Section 7 (Coordinate Points):**
+S7 is a sequence of 6-byte records.
+- `+0x00` (u16): Delta X
+- `+0x02` (u16): Delta Y
+- `+0x04` (u8): **Topology Flag** (3 active bits). 
+The firmware evaluates this flag to determine if the turtle graphics cursor should move (Pen-Up, e.g. starting a new line) or draw (Pen-Down, continuing the polyline). This flag breaks the sequence into individual street curves and correctly manages line continuity.
+
+**Section 1 (Bounding Box / Geometry Limits):**
+S1 (e1) is an array of 24-byte structs. Firmware C decompilation (dbq/pbp_clean.c) proves it parses identical to  x0E S2 records:
+- Reads a flag: if  , populates four int16 fields with  x7FFF (sentinel for no geometry).
+- If 1, it reads four int16 bounds (likely Delta X/Y bbox limits).
+- Then it reads a uint16 (shifted left by 1) and a second uint16, mirroring exactly the al1 and al2 fields of  x0E S2.
+This acts as spatial filtering to cull BSP branches without iterating S7 points.
+
+**Firmware Dispatcher Architecture (The "Magic Numbers" Myth):**
+Values previously thought to be internal section IDs (like  x24,  x28,  x2A,  x2C) are actually **direct byte offsets into the  x00 block header**.
+- The  x00 block has an 8-byte header, followed by the SECTION_DESCRIPTOR array (offset, count).
+- E.g.,  x28 is 8 + 8 * 4 = 40, which is the exact byte offset of the e8 descriptor's offset field.  x2A is the count field.
+- The C firmware explicitly does *(ushort *)(in_D0 + 0x28) to read the array pointer, meaning the layout of  x00 is rigidly hardcoded, relying on these structural header offsets rather than runtime switch-cases.
+

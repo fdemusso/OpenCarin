@@ -318,13 +318,13 @@ Bbox at offset `0x44`. Source: `docs/fw/mips_decode_type00.asm`,
 |---|---:|---:|---|
 | prologue (verbatim) | `0x0b` | 116 B | MIPS `T[0x0b]`, RST[0x0b]=116, empirical |
 | S0 (`e0`) | `0x40` | 10 B | MIPS `T[0x40]`, RST[0x40]=10, CF=0 empirical |
-| S1 (`e1`) | `0x40` | 10 B | (same T-entry, shared section_type) |
+| S1 (`e1`) | `0x40` | 10 B | `dbq/pbp_clean.c`: Bounding Box / Delta limits |
 | S2 (`e2`) | `0x40` | 10 B | (same T-entry, shared section_type) |
 | S3 (`e3`) | `0x12` | 4 B | MIPS `T[0x12]`, RST[0x12]=4, CF=0 empirical |
-| S4 (`e4`) | `0x08` | 32 B | MIPS `T[0x08]`, RST[0x08]=32, CF=0 empirical |
+| S4 (`e4`) | `0x08` | 32 B | BSP/QuadTree Index (Child ptrs + S7 ptrs) |
 | S5 (`e5`) | `0x10` | 8 B | MIPS `T[0x10]`, RST[0x10]=8, CF=0 empirical |
 | S6 (`e6`) | `0x06` | 16 B | MIPS `T[0x06]`, RST[0x06]=16, CF=0 empirical |
-| S7 (`e7`) | `0x0c` | 6 B | MIPS `T[0x0c]`, RST[0x0c]=6, CF=0 empirical |
+| S7 (`e7`) | `0x0c` | 6 B | Turtle Graphics Geometry (X,Y,Pen Flags) |
 | S8 (`e8`) | — | — | no firmware reference found |
 | S9 (`e9`) | `0x0f` | 8 B | MIPS `T[0x0f]`, RST[0x0f]=8, CF=0 empirical |
 | S10 (`e10`) | `0x14` | 8 B | MIPS `T[0x14]`, RST[0x14]=8, CF=0 empirical |

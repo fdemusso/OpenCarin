@@ -34,4 +34,7 @@ def decode_block(raw: bytes, table: dict[int, int], dbrel: int,
     if ctx.m_hi:            # 0x0E: preserve M_lo/M_hi so decode_s2_coords can read them
         ctx.dst[6] = ctx.m_lo
         ctx.dst[7] = ctx.m_hi
+    elif hasattr(ctx, "widths") and ctx.widths: # 0x00: preserve widths
+        ctx.dst[6] = ctx.widths[0]
+        ctx.dst[7] = ctx.widths[1]
     return bytes(ctx.dst)
