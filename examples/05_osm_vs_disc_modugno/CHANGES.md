@@ -39,13 +39,13 @@ The RR firmware (`bsw2`, `navboot`) was read with a disassembler to follow the u
 
 | Field | Data (OSM, discs) | Firmware | Verdict |
 |---|---|---|---|
-| `+0x10` bit 7 | placeholder class 6 / subtype 1 (Slovenia, Czechia) | route chain `+0x14` "UAG"; guidance `FULLY_ATTRIB` inverse; picks a junction-picture attribute | **explained**: not fully attributed |
+| `+0x10` bit 7 | placeholder class 6 / subtype 1 (Slovenia, Czechia) | route chain `+0x14` "UAG"; guidance `FULLY_ATTRIB` inverse; carried and printed, no effect found | **explained**: not fully attributed |
 | `+0x18 & 0x10` | 8 / 8 matched segments are OSM underpasses (`+0x1C` = 0x1D); recall 5 / 44 tunnels | route chain `+0x1B` "tunnel" (`BSI_RS_TUNNEL_MASK`) | **explained** (firmware), data agrees, small n |
 | `+0x1D` bits 4-6 | classes 5 / 6, values 1, 2, 3, 6; no OSM tag | 3-bit category: one planner cost, `gd_bjl` junction chaining | **hint**: category inside a complex junction; value names unknown |
 | chain `+0x0d` (not S4) | - | traversal direction | explained, not a disc field |
 
 Corrections to earlier statements of this log: the cost routine at `rpmod` `0x03cffc` does not use `+0x10` bit 7; the S4 byte `+0x1D` bit 7 / `+0x0A` bit 7 pair is the built-up flag only.
-Not followed: node `+6` flags (the nibble 4 / 2 question stays open), S10 flags 2 / 3, what attribute `0x10` / `0x20` draws, the BSI `uag` position fields.
+Not followed: node `+6` flags (the nibble 4 / 2 question stays open), S10 flags 2 / 3, where guidance sets `ROAD_TYPE`, the BSI `uag` position fields.
 
 ## Verdicts per field of the worklist
 
@@ -71,7 +71,7 @@ Legend: **explained** = holds on a large sample and could have failed; **hint** 
 ### 2. `+0x10` bit 7, `+0x1D` bits 4-6, `+0x18 & 0x10`
 
 - **`+0x10` bit 7 — explained (data + firmware): unattributed-geometry (UAG) flag = placeholder class.** The guidance path calls the inverse FULLY_ATTRIB
-  (`vp_man` junction descriptor `+6`, `docs/fw/04-rr-rpmod-edge-record.md` §10); it only changes the junction picture, not routing. Firmware: `rpmod` copies it to byte
+  (`vp_man` junction descriptor `+6`, `docs/fw/04-rr-rpmod-edge-record.md` §10); no routing or drawing effect found. Firmware: `rpmod` copies it to byte
   `+0x14` of the route chain record, printed by `rs_dump -u` as `UAG` (`docs/fw/04-rr-rpmod-edge-record.md` §7), with `POS_UAG` /
   `PARTLY_DIGIT._AREA` in the test tools. Data below. Always on class 6 / subtype 1 (3,013 of 3,021 in the random sample).
   Absent in Puglia (0 of 42,518). In Slovenia the whole minor road network of 21708 (1,907 segments) is class 6 / sub 1 /
@@ -211,7 +211,7 @@ Fields that change: speed 3.3% (11 -> 5 for 283: class 4 -> 5 for 232), form 3.3
 ## Questions only a unit (or the RR firmware) can answer
 
 1. Does form 7 or flag 2/3 on a segment change the route (time cost or turn legality) on a unit? Try the same road with and without.
-2. What does the unit draw differently for a junction descriptor with `FULLY_ATTRIB` = 0 (attribute `0x10` against `0x20` in `vp75_styl_simple_junctions.c`), and does a UAG chain trigger the split screen / "partly digitized area" notice? The flags themselves are explained.
+2. Does a UAG chain (route chain `+0x14`) or a junction with `FULLY_ATTRIB` = 0 trigger the split screen or the "partly digitized area" notice on a unit? The flags themselves are explained. (The `0x10` / `0x20` line attribute of `vp_man` is `normal` / `prohib` and follows `ROAD_TYPE`, not this flag.)
 3. Is `+0x18 == 4` read as "unpaved"? Is it used for route cost? (`sub_01fd80` edge `+0x1F` only reads the `0x10` bit.)
 4. What do junction 3 with high nibble 1 / 4 do in the planner (we only have the can_traverse rule)?
 5. Does the unit draw a bridge differently when `+0x1C` is 0x18, and the S7 flag points mark where?

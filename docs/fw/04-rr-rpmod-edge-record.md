@@ -10,14 +10,15 @@
 >
 > | S4 field | Result | Section |
 > |---|---|---|
-> | `+0x10` bit 7 | **not fully attributed** (route chain `+0x14` "UAG"; guidance `FULLY_ATTRIB` is its inverse); no routing effect found, selects an attribute of the stylised junction branch | 7, 9, 10 |
+> | `+0x10` bit 7 | **not fully attributed** (route chain `+0x14` "UAG"; guidance `FULLY_ATTRIB` is its inverse); no routing or drawing effect found, only carried and printed | 7, 9, 10 |
 > | `+0x18 & 0x10` | **tunnel flag** (route chain `+0x1B`, `BSI_RS_TUNNEL_MASK` = 16) | 7 |
 > | `+0x1D` bits 4-6 | **3-bit category** read by the planner (`rpmod` second edge layout `+0x1E`, adds a cost for some pairs) and by guidance (`gd_bjl` `sub_00a810`, chains segments of one junction); value meanings not found | 8, 9 |
 > | chain `+0x0d` | traversal direction of the chain, not an S4 field | 8 |
 >
-> Not done: node `+6` flags, what attribute `0x10` / `0x20` draws in `vp_man`, the receiver of the
-> `rpmod` chain record's UAG byte, who calls the leaf at `vp_man+0x13f8`. Corrections made on the way
-> (section 8): `rpmod+0x3cffc` does not use `+0x10` bit 7; (section 10): the `dbq` buffer is a pipe write.
+> Not done: node `+6` flags, the receiver of the `rpmod` chain record's UAG byte, who calls the leaf at
+> `vp_man+0x13f8`, where guidance sets `ROAD_TYPE`. Corrections made on the way (section 8): `rpmod+0x3cffc`
+> does not use `+0x10` bit 7; (section 10): the `dbq` buffer is a pipe write; (section 11): the `0x10` / `0x20`
+> line attribute in `vp_man` depends on `ROAD_TYPE`, not on `FULLY_ATTRIB`.
 
 ## 1. Setup
 
@@ -328,13 +329,36 @@ is probably also a pipe write.
 - So **S4 `+0x10` bit 7 set = the segment is not fully attributed** in the firmware's own words
   (value 1 of `FULLY_ATTRIB` = bit clear). This agrees with the UAG name of section 7 and the placeholder
   class of the data.
-- Effect found: `vp75_styl_simple_junctions.c` (`sub_00385c`, `0x38ac` and `0x4048`-`0x4054`) walks the
-  descriptor list to the planned branch and sets an attribute argument of the stylised element to `0x10`,
-  or `0x20` when that descriptor has `FULLY_ATTRIB == 1`; `sub_002cd8` (`0x34c0`) does the same in the
-  other stylisation function. The element is created by `sub_01a604(.., attrib)`. A leaf function at `0x13f8`
-  returns 1 if any descriptor in the list has `FULLY_ATTRIB == 0` (no caller found). What `0x10` / `0x20` draw
-  is not decoded.
+- Effect of `FULLY_ATTRIB` found: only a leaf at `vp_man+0x13f8` that returns 1 if any junction descriptor in
+  the list has `FULLY_ATTRIB == 0` (no caller found), and the dump. **No drawing decision on it was found.**
+  (An earlier version of this section said that `vp75_styl_simple_junctions.c` picks the line attribute
+  `0x10` / `0x20` from it. That was wrong: the byte `+6` tested at `0x34c0` / `0x4048` belongs to a *chain*
+  descriptor, where it is `ROAD_TYPE`; see section 11.)
 
-Reading for a map maker: leaving `+0x10` bit 7 clear (fully attributed) is what the junction pictures
-expect when every road has a functional class; with the bit set the picture code takes the other
-attribute and may draw the branch as unknown. Nothing in this path touches routing.
+Reading for a map maker: `+0x10` bit 7 reaches the junction pictures as a field that is printed and tested
+by one unused-looking helper. Writing 0 is safe. Nothing in this path touches routing.
+
+## 11. `vp_man` picture elements and the attribute ids `0x10` / `0x20` (2026-10-01)
+
+Layouts, from the dump function `sub_01e9e4` (junction list) and `sub_01ac7c` (element list):
+
+| Record | Fields (byte offset) |
+|---|---|
+| junction descriptor (JD, pipe type `0x10`) | `+4` TYPE, `+5` DRIVING_SIDE, `+6` FULLY_ATTRIB, `+7` ADVICE_DIRECTION, `+8` FROM_CHAIN, `+0xc` TO_CHAIN, `+0x10` list of chain descriptors, `+0x14` CONCAT, `+0x16` ANGLE, `+0x18` CENTER |
+| chain descriptor (CD) | `+4` PART_OF_JUNCT, `+5` PLANNED, `+6` **ROAD_TYPE**, `+0xc` ORIG_ANGLE, `+0xe` CONNECT_ANGLE, `+0x10` CONNECT_NODE, `+0x14` ADVICE_DIRECTION, `+0x18` NODE_LIST |
+| picture line element (`sub_01a604`, 28 bytes) | `+4`..`+0xa` four `s16` (x0, y0, x1, y1), `+0xc` *connected* id, `+0x10` **attribute id**, `+0x14` *special* id (0), `+0x18` index |
+| picture arc element (`sub_01a6ac`) | same, with a fifth `s16` at `+0xc` (radius) and two words at `+0x10`, `+0x14` |
+
+Name tables (the dump's decoders `sub_01a3a4`, `sub_01a310`, `sub_01a4f4`, the arc-type decoder at `0x1a53c`):
+- attribute id (`+0x10`): `0` none, `1` planned, `3` exit, `5` entry, `9` concat-p, **`0x10` normal**, `0x18` concat-np, **`0x20` prohib**; any other value prints `unknown attrib-id`.
+- connected id (`+0xc`): `0` none, `1` 1st, `2` 2nd, `3` both.
+- special id (`+0x14`): `0` none, `1` moto.
+- arc type: `0` none, `1` main, `2` sub.
+
+So `0x10` is the **normal** line attribute and `0x20` the **prohibited** one. `vp75_styl_simple_junctions.c`
+(`sub_00385c`, `0x38ac`, `0x4048`-`0x4054`; `sub_002cd8`, `0x34c0`) walks the junction's chain list, skips the
+FROM_CHAIN and TO_CHAIN nodes (`0x3484`-`0x349c`), takes the first side road with `PART_OF_JUNCT == 0` and
+builds its line with attribute `0x20` (prohib) when that chain's `ROAD_TYPE == 1`, else `0x10` (normal),
+connected id 1 (`1st`). `ROAD_TYPE` is set by guidance, not read
+from S4 here (not traced to a field). A post-pass (`0x1ac08`-`0x1ac4c`) rewrites elements of one index: attribute
+`9` -> `5` with connected id 2, and `0x18` -> `0x10` with connected id 1.
