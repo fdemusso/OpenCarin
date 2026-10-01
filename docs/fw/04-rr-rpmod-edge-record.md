@@ -382,3 +382,30 @@ So `ROAD_TYPE == 1` is **a segment whose `item+0x22` and `item+0x20` are both 2*
 from the segment) and `item+0x22` is descriptor `+0x2B`; neither was traced to an S4 field. Hence what makes a
 side road "prohib" in the picture is **not decoded**; the S4 candidates are the segment's direction restriction
 (`+0x0B` bits 4-5, 2 = one-way against) or the car-access byte, but that is a guess. Open.
+
+### 11.2 How `dbq` writes descriptor `+0x1D` and `+0x2B`; node `+6` bits (2026-10-01)
+
+`dbq` `sub_00fc28(a0, a1, a2, a3)`; descriptor base `sp+0x108` (`+k` = `sp+0x108+k`). Its four callers are `0xbbc0`,
+`0xc1c8`, `0xc31c`, `0xc3f0`.
+
+| Descriptor byte | Written from | Meaning |
+|---|---|---|
+| `+0x1D` (`sp+0x125`) | S4 `+0x11`: low nibble, but **0 if the low nibble is 0 or the high nibble is 4** (`0xfd7c`-`0xfdac`) | the segment's junction type, 0 for "not a junction" and for the open-to-cars exception of §2 |
+| `+0x1E` (`sp+0x126`) | S4 `+0x11` high nibble, **2 if the low nibble is 0 or the high nibble is 4** | the high nibble with the same default |
+| `+0x1C` (`sp+0x124`) | argument `a2` (0, 1 or 2) set by the caller from a list-membership test (`sub_050654`, then 1 / 2) | not an S4 field |
+| `+0x2B` (`sp+0x133`) | argument `a3` | not an S4 field; the callers pass a list-lookup result (`sub_0506cc`, a sorted-list search with a compare callback at `[list+0x10]`) |
+| `+0x12` / `+0x13` / `+0x14` | start node `+6` & 8, `& 7`, `(& 0x30) >> 4` (`0xfd10`-`0xfd34`) | **node `+6` flags**, see below |
+| `+0x18` / `+0x19` / `+0x1A` | end node `+6` & 8, `& 7`, `(& 0x30) >> 4` (`0xfd54`-`0xfd78`) | same, end node |
+
+Consequences:
+- In `gd_bjl` (section 9) `item+0x20` / `item+0x21` come from descriptor `+0x1D`, so **`ROAD_TYPE == 1` needs the
+  segment's junction type to be 2** (and `item+0x22` = descriptor `+0x2B` = 2, a query-dependent value). Junction
+  type 2 is rare; data (`examples/05_osm_vs_disc_modugno`, 21708 / 21734, nine areas): 67 / 71 segments, of the 42 / 45 matched
+  to OSM 37 / 40 lie on `junction=roundabout` (88-89%), on secondary / tertiary roads of class 2-4, the same kind of
+  road as junction type 6 (482 matched, 459 roundabout, median length 22 m in both). No OSM tag separates 2 from 6.
+  `vp_man` has `SIMPLE_ROUNDABOUT` and `COMPLEX_ROUNDABOUT` junction types, which makes "6 = ordinary, 2 = a roundabout the
+  picture treats differently" a candidate, **not verified**.
+- `gd_bjl` also tests the start / end node value `& 7 == 2` (descriptor `+0x13`, `+0x19` -> segment record `+0x1E`, `+0x1F`
+  as 0 / 1, section 9 list). So **node `+6` bits 0-2 = 2 is read by the guidance** (the data side calls it "node nibble 2",
+  `03-road-network.md` §6.7); bit 3 and bits 4-5 are copied to descriptor bytes `+0x12`, `+0x14` / `+0x18`, `+0x1A` and not
+  yet followed. The route planner reads `& 7 == 1` and bits 6-7 (section 2).

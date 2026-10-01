@@ -45,7 +45,8 @@ The RR firmware (`bsw2`, `navboot`) was read with a disassembler to follow the u
 | chain `+0x0d` (not S4) | - | traversal direction | explained, not a disc field |
 
 Corrections to earlier statements of this log: the cost routine at `rpmod` `0x03cffc` does not use `+0x10` bit 7; the S4 byte `+0x1D` bit 7 / `+0x0A` bit 7 pair is the built-up flag only.
-Not followed: node `+6` flags (the nibble 4 / 2 question stays open), S10 flags 2 / 3, where guidance sets `ROAD_TYPE`, the BSI `uag` position fields.
+New from the same reading: junction type 2 (67 / 71 segments, 88-89% of the matched on `junction=roundabout`, same roads as type 6) is the one the picture code ties to `ROAD_TYPE` 1; node `+6` bits 0-2 = 2 is read by guidance (`gd_bjl`). Both are hints from firmware, not tested on a unit.
+Not followed: node `+6` bits 3-5 and the rest of the node flags (the nibble 4 / 2 question stays open), S10 flags 2 / 3, where guidance sets `ROAD_TYPE`, the BSI `uag` position fields.
 
 ## Verdicts per field of the worklist
 
