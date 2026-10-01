@@ -291,3 +291,34 @@ non-zero; if the candidate is a class 6 element, the current segment must be cla
 groups the segments **inside one complex junction** and tells which may be chained. All seen values
 are class 5 (service, parking aisles, one-way tertiary of Duisburg), which fits "small segments that
 make up a junction". This is a reading of the compare chain, not a proof of the names.
+
+## 10. The receiver of message `0x10`: `vp_man`, "FULLY_ATTRIB" (2026-10-01)
+
+`gd_man` `sub_018778(type, buf, len)` is not a direct call: it appends `type, data` to a `0x400`-byte
+buffer and flushes it into the OS-9 pipe **`/c0/_128_/pipe/gdman_to_vpman_channel`** (path in `gd_man`
+data; `vp_man` opens the same path, `vp_man` strings `0x164ba`). The reader is **`vp_man`** (`navboot`,
+the junction picture / "view presenter": files `vp70_prepare_junction.c`, `vp73_styl_complex_junctions.c`,
+`vp75_styl_simple_junctions.c`). `dbq`'s `sub_003b38` has the same shape, so section 6's "reply buffer"
+is probably also a pipe write.
+
+- `vp_man` `sub_016508` reads the pipe; `0x168d0`-`0x168f8` switches on `type - 0xb` (9 cases, types
+  `0x0b`-`0x13`, jump table at `0x16900`). **Type `0x10`** (`0x16a78`) allocates `0x1c` bytes, copies the payload,
+  clears `+0` and `+0x10`, and appends it to the list at `[state + 4]`.
+- The dump code (`sub_01e9e4` and `0x1eb1c`-`0x1eb5c`) names the fields of that record. The record is a
+  **`JUNCTION_DESCRIPTOR`**: `+5` is **`DRIVING_SIDE`** (gd_bjl item `+0x60`), **`+6` is `FULLY_ATTRIB`**
+  (gd_bjl item `+0x61`, i.e. the exit segment's `+0x67`, i.e. `dbq` descriptor `+0x2C`, i.e. the inverse of
+  S4 `+0x10` bit 7). The other strings of that dump: `FROM_CHAIN`, `TO_CHAIN`, `PART_OF_JUNCT`,
+  `CONNECT_ANGLE`, `ADVICE_DIRECTION`, `W_PARTNER`, "sideroad angle ... attrib(0x%02x)".
+- So **S4 `+0x10` bit 7 set = the segment is not fully attributed** in the firmware's own words
+  (value 1 of `FULLY_ATTRIB` = bit clear). This agrees with the UAG name of section 7 and the placeholder
+  class of the data.
+- Effect found: `vp75_styl_simple_junctions.c` (`sub_00385c`, `0x38ac` and `0x4048`-`0x4054`) walks the
+  descriptor list to the planned branch and sets an attribute argument of the stylised element to `0x10`,
+  or `0x20` when that descriptor has `FULLY_ATTRIB == 1`; `sub_002cd8` (`0x34c0`) does the same in the
+  other stylisation function. The element is created by `sub_01a604(.., attrib)`. A leaf function at `0x13f8`
+  returns 1 if any descriptor in the list has `FULLY_ATTRIB == 0` (no caller found). What `0x10` / `0x20` draw
+  is not decoded.
+
+Reading for a map maker: leaving `+0x10` bit 7 clear (fully attributed) is what the junction pictures
+expect when every road has a functional class; with the bit set the picture code takes the other
+attribute and may draw the branch as unknown. Nothing in this path touches routing.

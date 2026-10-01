@@ -55,7 +55,8 @@ Legend: **explained** = holds on a large sample and could have failed; **hint** 
 
 ### 2. `+0x10` bit 7, `+0x1D` bits 4-6, `+0x18 & 0x10`
 
-- **`+0x10` bit 7 — explained (data + firmware): unattributed-geometry (UAG) flag = placeholder class.** Firmware: `rpmod` copies it to byte
+- **`+0x10` bit 7 — explained (data + firmware): unattributed-geometry (UAG) flag = placeholder class.** The guidance path calls the inverse FULLY_ATTRIB
+  (`vp_man` junction descriptor `+6`, `docs/fw/04-rr-rpmod-edge-record.md` §10); it only changes the junction picture, not routing. Firmware: `rpmod` copies it to byte
   `+0x14` of the route chain record, printed by `rs_dump -u` as `UAG` (`docs/fw/04-rr-rpmod-edge-record.md` §7), with `POS_UAG` /
   `PARTLY_DIGIT._AREA` in the test tools. Data below. Always on class 6 / subtype 1 (3,013 of 3,021 in the random sample).
   Absent in Puglia (0 of 42,518). In Slovenia the whole minor road network of 21708 (1,907 segments) is class 6 / sub 1 /
