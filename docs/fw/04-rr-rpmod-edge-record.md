@@ -471,7 +471,7 @@ So the node value 2 marks a node **where two or three roughly parallel segments 
 current one) meet**, and the guidance turns that into a junction of kind 6 or 7 with an ordering (`+0x33`) of its
 arms. Reading: a fork / merge node (carriageway split, slip-road branch), which agrees with the data hint (slip-road
 and main-road junctions). **Hint, not explained**: the kind names of 6 and 7 were not decoded (the `vp_man` dump
-prints the number) and the readers of `+0x33` were not traced.
+prints the number) and the readers of `+0x33` are in section 13.1.
 
 Data check (`examples/05_osm_vs_disc_modugno`, nodes with `& 7 == 2` or 0 in the study boxes, sections 5 and 6;
 arm bearing = first segment shape step out of the node, so approximate; "cluster" = most arms within 60 degrees of
@@ -491,3 +491,24 @@ road leaving a main road at a shallow angle) would also be what a human calls a 
 checked: the other filters of `sub_00e8d8` (junction type, `item+0x22`), and the angle the firmware uses, which is a
 field of the segment record and not this bearing. The reading "node value 2 = fork / merge of near-parallel arms" is
 now **explained for the data side** (n = 29 / 27, 2 exceptions); the names of the junction kinds 6 and 7 stay unknown.
+
+### 13.1 Readers of `+0x33` (2026-10-01)
+
+`+0x33` of the `gd_bjl` segment record is the **role of the segment as an arm of the junction**: 1 and 2 are the
+two sides, 4 the third arm of a kind-7 junction (section 13); 0 = unassigned. It is written by `sub_00e8d8` and
+by a second place at `0xb348`-`0xb368` (role 2 if record `+0x5d` == 1, else 1; the junction object `+0x58` or `+0x5c`
+is then incremented, so these two words **count the arms on side 1 and side 2**). Readers in `gd_bjl`:
+
+| Address | Use |
+|---|---|
+| `0xb36c`-`0xb3ac` | switch on role 1 / 2 for the count increment above |
+| `0xb408`-`0xb428` | the first segment's role picks the count (`+0x58` or `+0x5c`) stored at junction `+0x24` |
+| `0xb684`-`0xb6dc`, `0xb724`-`0xb794` | numbers the arms of one side (`+0x28` = running index) and compares roles of neighbours |
+| `0xdca0`-`0xdd14` | copies the role into `+0x32` (1, 2, 3, 4 map to themselves, anything else 5) |
+| `0xe120`-`0xe148` | role 4 is stored as 4, other roles as is, into byte `+0x40` of the junction (default 5 when the segment is not the planned one) |
+| `0x12124`-`0x121e0` | for role 1 / 2, takes the side's arm count (`+0x58` / `+0x5c`); a count of 0 or 1 combined with `+0x32` == role sets a flag byte in a per-arm table |
+
+`gd_man` reads `+0x32` / `+0x33` only to append them to its event trace (`sub_01a264`, a ring of `u16` codes at
+`gp-0x52c8`), not to decide anything. What the per-arm table at `0x121d0` feeds, and the names of the roles, were not
+traced. Verdict: **hint** (structure read, no data to test it on: the role is computed by the firmware, not stored on
+the disc).
