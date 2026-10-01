@@ -409,3 +409,37 @@ Consequences:
   as 0 / 1, section 9 list). So **node `+6` bits 0-2 = 2 is read by the guidance** (the data side calls it "node nibble 2",
   `03-road-network.md` §6.7); bit 3 and bits 4-5 are copied to descriptor bytes `+0x12`, `+0x14` / `+0x18`, `+0x1A` and not
   yet followed. The route planner reads `& 7 == 1` and bits 6-7 (section 2).
+
+## 12. Node `+6` flags in the firmware (2026-10-01)
+
+Node record byte `+6` (the high byte of the `u16` that the data side calls "flags", `03-road-network.md` §6.7: bits 15-14 =
+level, 13 = S6 edge node, 12 = S5 node, N = bits 11-8). Readers found:
+
+| `+6` bits | Reader | Use |
+|---|---|---|
+| `& 7 == 1` | `rpmod` `sub_01fd80` (edge `+0x28` / `+0x29`) and `sub_04e02c` (edge `+0x2e` / `+0x2f`) | dead end (start / end node); read by `sub_029254` and `sub_03bcc8` |
+| `& 7` in {4, 5} | `rpmod` `sub_04e02c` (edge `+0x32` / `+0x33`, `0x4e26c`-`0x4e2b0`) | 4 and 5 are treated alike; computed, no reader of the single bytes found |
+| `& 7 == 2` | `dbq` descriptor `+0x13` / `+0x19`, then `gd_bjl` (`0x24ac`, `0x24d8`: segment record `+0x1e` / `+0x1f` = 1) | the guidance flags a segment whose start / end node has value 2 |
+| `& 8` (bit 3) | `dbq` descriptor `+0x12` / `+0x18` only | exported, no reader found |
+| `(& 0x30) >> 4 == 2` | `rpmod` `sub_04e02c` (edge `+0x30` / `+0x31`, `0x4e1f4`-`0x4e230`) | edge (border) node; computed, no reader of the single bytes found; also exported by `dbq` as descriptor `+0x14` / `+0x1a` |
+| `(& 0xc0) >> 6` | `rpmod` `sub_01fd80` / `sub_04e02c` (edge `+0x3c` / `+0x3d`, `+0x44` / `+0x45` as `3 - x`) and `sub_069e20` (tests against `0xc0` / `0x80`) | level |
+
+Data against this (`examples/05_osm_vs_disc_modugno`, Puglia boxes, in-box nodes; script run 2026-10-01):
+
+| | 21708 (29,474 nodes) | 21734 (34,921 nodes) |
+|---|---|---|
+| bits 4-5 on S5 nodes | value 1: 25,646 (all) | 30,439 (all) |
+| bits 4-5 on S6 nodes | value 2: 3,696; **value 3: 132** | 4,332; **value 3: 150** |
+| `& 7` | 0: 19,053, 1: 4,071, **2: 30**, **4: 36**, 5: 6,284 | 22,066, 5,274, 28, 37, 7,516 |
+| bit 3 | never set | never set |
+
+What follows:
+- **Bits 4-5 == 2 is the firmware's "edge node" flag.** All S6 nodes with only bit 13 qualify; the 132 / 150 S6 nodes
+  that also have bit 12 (value 3, the "189 nodes" of the data study, here only those inside the boxes) do **not**, so the
+  planner treats them as ordinary nodes stored in the edge section. This is the first reading of those nodes, not a proof
+  of why the compiler sets bit 12 on them.
+- **`& 7` in {4, 5} are one class for the planner.** N = 4 (36 / 37 nodes, degree-2 street-level nodes) behaves like N = 5
+  (degree 2): the difference is not used by the cost code that was found. The data study could not tell them apart either.
+- **`& 7 == 2` is read by the guidance** (`gd_bjl`), consistent with the data hint that N = 2 nodes (30 / 28) are slip-road and
+  main-road junctions; what the segment record `+0x1e` / `+0x1f` flag does after that is not traced.
+- **Bit 3 is never set** in the 64,395 boxed nodes of both discs and is read by nobody found; a generator keeps it 0.

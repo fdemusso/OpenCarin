@@ -148,15 +148,17 @@ Puglia, 21708: 45,185 nodes (`05_nodes.py`).
 
 - **Bits 15–14, bit 13, bit 12 — explained** (already known): level reached; bit 13 set on every S6 edge node (5,867 / 5,867) and never on S5;
   bit 12 set on every S5 node (39,318) and on 189 S6 nodes (79 with in-tile degree 2, 64 with degree 1; 187 on street-only level).
-  Why those 189 edge nodes have bit 12 — unknown.
+  Why those 189 edge nodes have bit 12 — unknown. Firmware (`docs/fw/04-rr-rpmod-edge-record.md` §12): `rpmod` takes "edge node" as `bits 5-4 == 2`, so
+  these nodes (value 3; 132 / 150 inside the boxes of 21708 / 21734) count as ordinary nodes, not as edge nodes.
 - **Nibble N (bits 11–8) — explained for 0, 1, 5; hint for 2 and 4.** N = 1: S5 nodes of degree 1 (6,420 / 6,420). N = 5: S5 nodes of degree 2
   (4,938 of 4,986) and S6 edge nodes with one in-tile segment (5,687 of 5,765; such a node has degree 2 across the border). N = 0:
   degree >= 3 (22,279 of 22,399 interior nodes of degree 3, 5,368 of 5,378 of degree 4).
   RR firmware reads `+6 & 7 == 1` (dead end) and `3 - (bits 7-6)` (level).
   N = 4 (48 S5 nodes of degree 2): the two segments differ in no attribute more often than for N = 5 (19 / 48 name changes against 1,170 / 4,938);
-  all 48 have `+0x1C` != 0x10 (bridge / tunnel bits) but today's OSM calls 29 / 30 matched ones ground level: **unknown**.
+  all 48 have `+0x1C` != 0x10 (bridge / tunnel bits) but today's OSM calls 29 / 30 matched ones ground level: **unknown**. Firmware: `& 7` 4 and 5 are one class in
+  `rpmod` (`sub_04e02c`), so N = 4 is a variant of the degree-2 node; hint.
   N = 2 (40 nodes, degree 3–4): slip-road and main-road junctions (12 of 29 interior nodes have a slip-form segment against 562 / 21,372 for N = 0):
-  **unknown**.
+  **unknown**; firmware: `& 7 == 2` is read by the guidance (`gd_bjl`), which fits a junction with slip roads; hint.
 - **Low byte — explained:** 1 and 2 on the two nodes of a crossing without junction (101 and 95; 89 and 88 have N = 5).
 - Disc against disc (15,361 nodes at the same position): 208 change flags, almost all N = 0 <-> 5 (degree changed: `0xd000 -> 0xd500` 60,
   `0xd100 -> 0xd500` 48) or level (`0xd000 -> 0x9000` 19). Generator: compute from the graph (degree, level, section, crossings).
