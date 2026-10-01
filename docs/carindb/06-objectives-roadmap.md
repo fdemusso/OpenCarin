@@ -139,8 +139,8 @@ Every block is readable except one group:
 
 `examples/05_osm_vs_disc_modugno/CHANGES.md` compares both DVDs with today's OSM, field by field. Known now: `+0x1D` bit 0 = has house numbers;
 speed category = default per (class, form, built-up), not `maxspeed`; node flags follow degree, level and section; S10 flag 0 / 1 entries match OSM
-restrictions; `+0x1C` 0x18 = bridge, S7 flag 2 with it. `+0x10` bit 7 = UAG / placeholder class (write 0), `+0x18 & 0x10` = tunnel flag. Hints: `+0x18` = 4 (unpaved track), junction 3
-(pedestrian areas), signposts on ramps from `destination`. Not known: form 7 (write 11 / 12), S10 flags 2 / 3, `+0x1D` bits 4–6, node nibble 4 and 2,
+restrictions; `+0x1C` 0x18 = bridge, S7 flag 2 with it. `+0x10` bit 7 = not fully attributed / UAG (write 0; firmware `FULLY_ATTRIB`, `fw/04` §10), `+0x18 & 0x10` = tunnel flag (`fw/04` §7). Hints: `+0x1D` bits 4-6 = category chaining the segments of one junction (write 0), `+0x18` = 4 (unpaved track), junction 3
+(pedestrian areas), signposts on ramps from `destination`. Not known: form 7 (write 11 / 12), S10 flags 2 / 3, the values of the `+0x1D` bits 4–6 category, node nibble 4 and 2,
 TMC (location table). Not done: the 2015 OSM snapshot (Overpass attic did not answer), nothing run on a unit.
 
 ### D. Writer / compiler

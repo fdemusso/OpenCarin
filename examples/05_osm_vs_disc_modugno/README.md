@@ -63,4 +63,5 @@ cell of 0.07° at a time, retries with a growing pause and on mirrors, and keeps
   (n, k and the exceptions given) and could have failed; otherwise *hint* or *unknown*. Negative results
   are recorded with numbers.
 - **Not on a unit.** Nothing here is validated on a unit. Every verdict says what the data show, not what
-  the firmware does with it, except where a firmware read is cited.
+  the firmware does with it, except where a firmware read is cited. A later firmware cross-check (disassembly of the RR modules, no script here)
+  is summarised in `CHANGES.md` ("Firmware cross-check") and in `docs/fw/04-rr-rpmod-edge-record.md` §5-10.

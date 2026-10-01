@@ -4,6 +4,20 @@
 > firmware of the unit that reads DB-REL 34 DVDs ([`03-firmware-provenance.md`](03-firmware-provenance.md)).
 > Listing: [`rr_rpmod_edge_unpack.asm`](rr_rpmod_edge_unpack.asm). Field meanings on the
 > data side: [`../carindb/03-road-network.md`](../carindb/03-road-network.md) §6.7.
+>
+> **Update 2026-10-01 (sections 5-10).** The three fields §2 left unexplained were followed through the
+> RR modules (`rpmod`, `dbq`, `gd_bjl`, `gd_man`, `vp_man`, `rs_dump`):
+>
+> | S4 field | Result | Section |
+> |---|---|---|
+> | `+0x10` bit 7 | **not fully attributed** (route chain `+0x14` "UAG"; guidance `FULLY_ATTRIB` is its inverse); no routing effect found, selects an attribute of the stylised junction branch | 7, 9, 10 |
+> | `+0x18 & 0x10` | **tunnel flag** (route chain `+0x1B`, `BSI_RS_TUNNEL_MASK` = 16) | 7 |
+> | `+0x1D` bits 4-6 | **3-bit category** read by the planner (`rpmod` second edge layout `+0x1E`, adds a cost for some pairs) and by guidance (`gd_bjl` `sub_00a810`, chains segments of one junction); value meanings not found | 8, 9 |
+> | chain `+0x0d` | traversal direction of the chain, not an S4 field | 8 |
+>
+> Not done: node `+6` flags, what attribute `0x10` / `0x20` draws in `vp_man`, the receiver of the
+> `rpmod` chain record's UAG byte, who calls the leaf at `vp_man+0x13f8`. Corrections made on the way
+> (section 8): `rpmod+0x3cffc` does not use `+0x10` bit 7; (section 10): the `dbq` buffer is a pipe write.
 
 ## 1. Setup
 
@@ -37,12 +51,12 @@ Arguments: `$a0` = edge struct (out), `$a1` = decoded block of type `0x00`–`0x
 | `+0x0E` / `+0x0F` | copied | `+0x26` / `+0x27` | bearing at start / end ✔ |
 | `+0x10 & 0x0F` | copied | `+0x17` | road class ✔ |
 | `+0x10 & 0x70 >> 4` | copied | `+0x19` | class 6 subtype ✔ |
-| `+0x10 & 0x80` | → 1 if set | `+0x1D` | **new, meaning unknown** (bit 7 of the class byte) |
+| `+0x10 & 0x80` | → 1 if set | `+0x1D` | **not fully attributed / UAG** (route chain `+0x14`, §7; guidance inverse `FULLY_ATTRIB`, §10). Only this first layout has it |
 | `+0x11 & 0x0F` / `>> 4` | copied | `+0x14` / `+0x18` | junction type / high nibble ✔ |
 | `+0x11` + class | `+0x1B` = 0 if class = 6, or if junction ∈ {3, 4} and high nibble ≠ 4; else 1 | `+0x1B` | "open to cars": same rule as CC-93 `can_traverse`; explains the DVD-only `0x13` (closed) vs `0x43` (open) |
-| `+0x18 & 0x10` | only if DB-REL ≥ 27 | `+0x1F` | **the `0x10` value of `+0x18` is a routing flag** (meaning unknown) |
+| `+0x18 & 0x10` | only if DB-REL ≥ 27 | `+0x1F` | **tunnel flag** (route chain `+0x1B`, §7); not a routing flag, `rpmod` only copies it |
 | `+0x0A & 0x80` / `+T[0x09]+2 & 0x80` | built-up flag: street level (`0x00`) reads `+0x0A` bit 7 on DB-REL ≥ 21, `+0x1D` bit 7 below; coarse levels read `+0x0A` bit 7 on DB-REL ≥ 21, else 0 | `+0x1A` | built-up area ✔ |
-| `+T[0x09]+2 & 0x70 >> 4` | street level only | `+0x20` | **`+0x1D` bits 4–6: new, meaning unknown** |
+| `+T[0x09]+2 & 0x70 >> 4` | street level only | `+0x20` (first layout), `+0x1E` (second layout `sub_04e02c`) | **`+0x1D` bits 4–6: 3-bit category**, read in the second layout (§8); meaning unknown |
 | `+0x12` → S10 | via `sub_06322c`: first entry = `+0x12`, count = (next record's `+0x12` − this) / `T[0x14]` | lists at `+0x48` / `+0xA8` (≤ 8 × 12 B each), counts `+0x40` / `+0x44` | **forbidden turns**: entries are split by S10 `+6` bit 0 (start / end node). First firmware evidence for S10 |
 | `+0x14` → S12 | same helper, stride `T[0x15]` | — | TMC references ✔ |
 
@@ -83,13 +97,13 @@ it is not on `NAV_SW(v32).iso`.
 
 ## 4. Open
 
-1. The `+0x18` pass of packed `0x00` tiles: no firmware on this CD decodes it; its head is undecoded (§6.7).
+1. ~~The `+0x18` pass of packed `0x00` tiles~~ Done 2026-09-28 (pass `0x1B`, `04-cf1-codec.md` §9.11.12).
 2. The cost function: which edge fields feed the route cost (speed `+0x0A` bits 0–4 is not read
    by either unpacker; look for readers of `+0x0A & 0x1F`).
 3. Callers of `sub_01fd80` / `sub_04e02c`: which structure lists edges, and how the S6 twin and
    S8 level links are followed (tile crossing and level switching).
-4. Meaning of `+0x10` bit 7, `+0x1D` bits 4–6, `+0x18 & 0x10` and node `+6`. First trace of
-   the readers in §5: `rpmod` only carries the first and third on; the second is not read there.
+4. ~~Meaning of `+0x10` bit 7 and `+0x18 & 0x10`~~ Done 2026-10-01 (UAG / tunnel, §7, §10). Still open: the
+   values of the `+0x1D` bits 4-6 category (§8, §9) and node `+6` (not traced).
 5. The `gp[-0x7A30]` per-block-type table (initialised data of `rpmod`).
 
 ## 5. Where the unexplained edge bits go (2026-10-01)
@@ -120,8 +134,8 @@ in question are only **copied through**:
   struct, next to `+0x12` / `+0x13` / `+0x15`–`+0x19` flags.
 
 So in `rpmod` neither bit steers the route cost or a branch. They are data for another module.
-**Edge `+0x20` (`+0x1D` bits 4–6) is read by none of these routines.** Still open: the consumer of
-the exported struct (`dbq`, `pbp` or the callers of `sub_011af4` / `sub_011b34`).
+**Edge `+0x20` (`+0x1D` bits 4–6) is read by none of these routines.** The exported struct is the route-store
+chain record (§7); the bits 4-6 are carried by the second edge layout (§8) and the `dbq` descriptor (§6, §9).
 
 ## 6. `dbq` builds a 52-byte segment descriptor (2026-10-01)
 
@@ -130,8 +144,8 @@ and `update_carloc` were made with `scripts/firmware/mips_listing.py`; the raw S
 read in `dbq` and `dbpa` only.
 
 `dbq` `sub_00fc28` reads the S4 record `s0` directly (not through `rpmod`) and fills a 52-byte
-(`0x34`) descriptor at `sp+0x108`, then appends it to a reply buffer with `sub_003b38` (copy into a
-`0x400`-byte buffer, flush with `sub_003248`). Tail fields are read from the u16 at
+(`0x34`) descriptor at `sp+0x108`, then appends it to an output buffer with `sub_003b38` (copy into a
+`0x400`-byte buffer, flush with `sub_003248`; a pipe write, see §10). Tail fields are read from the u16 at
 `S4 + T[0x09] + 2`, i.e. bytes `+0x1C` (high) / `+0x1D` (low):
 
 | Descriptor byte | Source | Meaning in §6.7 |
@@ -153,10 +167,12 @@ descriptor with `+0x2C` = 0 is a segment whose class came from the placeholder.
 Searched for the clients: no function in `mm`, `gd_man`, `dbpa`, `update_carloc` or `rpmod` reads
 descriptor bytes `+0x28`, `+0x29` and `+0x2C` through one base register (two-byte search, window
 of 120 lines). The reply is probably unpacked byte by byte (`dbq` has an unrolled 100-byte
-serialiser at `0x4140`) or passed to a module not in this container. **Open: the receiver of the
-descriptor, and so the use of `+0x1D` bits 4–6.**
+serialiser at `0x4140`) or passed to a module not in this container. **Receiver found later: `gd_bjl`, §9.**
 
 ### 6.1 Receiver search and a string lead (2026-10-01)
+
+> Superseded by §9 and §10: the receiver is `gd_bjl` (offsets differ from `dbq`'s, as guessed below) and
+> the UAG / RAAG leads were followed (UAG confirmed, RAAG not traced). Kept for the record of what was searched.
 
 Listings of every module of the `bsw2` container (`hdlbsi`, `update_carloc`, `dbpa`, `dbc`,
 `db_con`, `dbd`, `gd_man`, `gd_bjl`, `mm`, `hdltmc`, `taxi`, `tpd`) and of `mm_sig` / `rs_dump`
@@ -213,8 +229,8 @@ Result:
   8; "sottovia"), all with `+0x1C` = 0x1D. The reverse is weak: of 21 / 23 matched OSM tunnels, 1 / 4
   carry the bit (most are `+0x1C` = 0x16).
 - Mountain pass is never set by this build, whatever the data holds.
-- Still open: `+0x1D` bits 4-6 (not copied into the chain record; only into the `dbq` descriptor
-  of section 6), `+0x0d` of the chain record.
+- `+0x1D` bits 4-6 are not copied into the chain record (they are in the second edge layout and the `dbq`
+  descriptor, §8-9); `+0x0d` of the chain record is the traversal direction (§8).
 
 Method: option `u` is case `0x26a0` of the jump table at `0x1fb4` in `rs_dump` (table index = char - 0x3f,
 target = `0x1fa0` + entry); it sets the flag at `gp - 0x7b95`, read at `0x2dc0`, which selects the string
@@ -280,9 +296,9 @@ record. The guidance one goes through the `dbq` descriptor (section 6):
 
 So a segment with `+0x10` bit 7 reaches the guidance output as a **0 in the junction record when the
 junction's exit segment is unattributed**. The BSI test tools name the output fields
-`curr_junction_in_uag` / `next_junction_in_uag` (`nav_tst`, shown next to `dtji_is_valid`), which is
-most likely where this ends, with the sense inverted somewhere after message `0x10`. Not traced past the
-message: the receiver of type `0x10` (probably a module in `navboot`).
+`curr_junction_in_uag` / `next_junction_in_uag` (`nav_tst`, shown next to `dtji_is_valid`); this path does
+not end there. The receiver of type `0x10` is `vp_man` and the field is `FULLY_ATTRIB` (§10). Where the
+BSI `uag` position fields come from is not traced.
 
 What `+0x1D` bits 4-6 do in `gd_bjl`: record `+0x5E` holds the category; `sub_00a810` (`0xa88c`-`0xa990`)
 decides whether a candidate segment can follow the current one in a junction: category 1 only after
