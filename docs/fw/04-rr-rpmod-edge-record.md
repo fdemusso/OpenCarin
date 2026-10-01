@@ -18,6 +18,7 @@
 > | segment junction type 2 vs 5 / 6 | `gd_bjl` treats rings of types 5 and 6 as `ROUNDABOUT` and rings of type 2 as `NORMAL` (executed, 575 + 58 / 781 + 62 rings); meaning of 2 still open | 17 |
 > | node value 2 | executed: `BIF_SYM_2/3` possible on 21 of 47 value-2 nodes, 0 of 1,452 value-0 nodes, 4 of 47 with the flag forced to 0 | 17 |
 > | `dbq` output stream | descriptor + text records (`0x50`) + points (8 bytes) + sign records (`0xe5`), counts in descriptor `+0x2e` / `+0x2f` / `+0x30` | 17 |
+> | `vp_man` types 2 / 3 | read: same path (`sub_00b1f4` + `vp73` complex styling); executed: never sent by `gd_man`; a type-2 ring is sent as `NORMAL`, styled as a complex junction (`sub_00702c`, hypothesis) | 18 |
 > | chain `+0x0d` | traversal direction of the chain, not an S4 field | 8 |
 > | node `+6` `& 7 == 2` | **fork / merge node**: `gd_bjl` counts the arms within 60 degrees that touch it; 2 arms make a `BIF_SYM_2` junction, 3 a `BIF_SYM_3`. Data: 28 / 29 and 26 / 27 nodes have such arms against 18% of node value 0 | 12, 13 |
 > | node `+6` bits 5-4, bit 3 | bits 5-4 == 2 = planner's edge node; bit 3 never set, no reader | 12 |
@@ -817,5 +818,56 @@ from `sub_0193c0(J')` (`gd_man` `0x193c0`-`0x194c4`, called from `sub_018efc` at
 with these exceptions: type `0x13` (`OTHER`) with a to item and `+0x40` == 5 gives `0x15` (`NORMAL`) when `sub_0194c8` says 1 or 2;
 type 5 (`T_JUNCTION`) with fewer than 4 items in the list gives `0x13`; type `0x14` gives `0x15` in two places; type `0xf` becomes
 `0x10` when the word at `gp[-0x7b94]` is `0xe0` or `0x26` (a country or region code, **hypothesis**). It never writes 2 or 3.
-So the names `SIMPLE_ROUNDABOUT` / `COMPLEX_ROUNDABOUT` are not produced by `gd_bjl` or `gd_man` by a constant; where they are used
-(`vp_man`'s two stylisation paths `vp73_` / `vp75_`) was not traced.
+So the names `SIMPLE_ROUNDABOUT` / `COMPLEX_ROUNDABOUT` are not produced by `gd_bjl` or `gd_man` by a constant; where `vp_man` uses
+them is section 18.
+
+## 18. `vp_man`: what each junction type does, and which types ever arrive (2026-10-02)
+
+### 18.1 The picture dispatcher of `vp_man` (read)
+
+`sub_002310` (`vp_man` `0x2310`...) takes a junction descriptor (JD) and picks the stylisation by `TYPE` (`JD+4`), through a
+22-entry jump table (`0x2530`, first stage) and, for the group that goes through the common preparation, a second one
+(`0x269c`). Names are those of section 13.3.
+
+| JD type | Stage 1 | Stage 2 |
+|---|---|---|
+| 4 `Y_JUNCTION` | `vp75` `sub_002cd8` | - |
+| 5 `T_JUNCTION` | `vp75` `sub_00385c` | - |
+| 6, 7, 8, 9 `BIF_*` | `vp75` `sub_0043e4` | - |
+| 15, 16 `MOTORWAY_EXIT`, `OTHER_EXIT` | `vp75` `sub_004b4c` | - |
+| 20 `STYLIZED_DCW_JUNC` | `sub_00a918`, then `vp75` `sub_005abc` | - |
+| 22 `RDAB_EXIT` | `vp75` `sub_005110` | - |
+| 11, 17, 18 | nothing | - |
+| 1 `ROUNDABOUT` | common preparation: `vp70` `sub_00a468`, `sub_00a918`, `sub_00ad34` | none: no styled picture is made here |
+| 2 `SIMPLE_ROUNDABOUT`, 3 `COMPLEX_ROUNDABOUT` | the same preparation | `sub_00b1f4`, then `vp73` `sub_0072e0` (complex junction styling) |
+| 10, 12, 13, 14, 19 | `sub_00a468`, `sub_00ad34` | `vp73` `sub_0072e0` |
+| 21 `NORMAL` | `sub_00a468`, `sub_00ad34` | `vp73` `sub_00702c` |
+
+(`vp70` = `vp70_prepare_junction.c`, `vp73` = `vp73_styl_complex_junctions.c`, `vp75` = `vp75_styl_simple_junctions.c`, found from the
+source-file strings of `navboot`.) Types 2 and 3 take the same path, so `SIMPLE_` and `COMPLEX_ROUNDABOUT` differ only inside
+the preparation: `sub_00ad34` skips an update of a chain field (`+0xe`, `CONNECT_ANGLE`) for types 3 and 14, the two `COMPLEX_` ones
+(`0xb0cc`-`0xb0e0`, `0xb16c`-`0xb180`; what that update is for was not decoded).
+
+### 18.2 Which types reach `vp_man` (executed, plus a search of the listing)
+
+- **Read.** In `gd_bjl` the junction type is only ever set from constants (section 17.6) and from the two arguments of `sub_003a00`
+  (`0x11`, `0x12`, `0x7c`, `0x7d`); in `gd_man` `sub_0193c0` passes it through. No path writes 2 or 3. In `vp_man` the only
+  stores to `JD+4` are 8, 9 and 16 (`0x4ce8`...), and it has no other source for the type than the pipe message.
+- **Executed** (`gd_man.py`: the `gd_bjl` junction object is copied to the same addresses of a `gd_man` emulator and
+  `sub_0193c0` is run on it). Types sent in the 3-4 arm junctions of the study area, all (from, to) pairs, 5,024 runs on 21708 and
+  5,762 on 21734 (node samples of section 17.6): `5` 393 / 452, `6` 40 / 37, `16` 28 / 24, `19` 21 / 58, `20` 35 / 6, `21` 4,391 / 5,029,
+  `22` 116 / 154, and `1` only on 21734 (2 runs). **Never 2, 3, 4, 7, 8 or 9.** In the 1,476 roundabout entries that ran (633 on 21708, 843 on 21734; every ring of the
+  study area, 30 more faulted): rings of segment type 5 or 6 are sent as `ROUNDABOUT` (1), rings of type 2 as `NORMAL` (21).
+
+So the `vp_man` branches for types 2 and 3 (and 4, 8, 9, and 7 in this sample) are **not reached from the junctions of these discs** by
+what was run; this is a statement about the junctions assembled in section 17.4 and about what the module code can produce, not
+about all possible routes (only junctions with 3 or 4 arms and the rings were run).
+
+### 18.3 What this says about segment junction type 2 (hypothesis on the last step)
+
+A ring of segment type 2 is not a roundabout for `gd_bjl` (section 17.6); it is sent as `NORMAL` (21), which `vp_man` styles with
+`vp73` `sub_00702c`, the **complex junction** styling, while rings of types 5 and 6 are sent as `ROUNDABOUT` and get no styled
+picture from this dispatcher. So the firmware draws a type-2 ring as a complex junction and announces types 5 / 6 as roundabouts.
+That fits the data (type 2 rings are the larger ones, section 13.3, `examples/05_osm_vs_disc_modugno`). **Hypothesis**: that
+`sub_00702c` really draws a ring (its code was not read), and that a map maker would use type 2 for rings that should not get a
+roundabout announcement.

@@ -23,6 +23,7 @@ from carin.parser.cf1.constants import T_DESC_BASE, T_REC_S4  # noqa: E402
 from carin.parser.iso import CarinVolume, IsoImage  # noqa: E402
 from dbq import DbqEmu  # noqa: E402
 from gd_bjl_junction import JUNCTION, build_and_run, nodes_with_arms  # noqa: E402
+from gd_man import GdManEmu  # noqa: E402
 from run_tile import study_tiles  # noqa: E402
 
 NAMES = {1: "ROUNDABOUT", 2: "SIMPLE_ROUNDABOUT", 3: "COMPLEX_ROUNDABOUT", 4: "Y_JUNCTION", 5: "T_JUNCTION", 6: "BIF_SYM_2",
@@ -36,6 +37,8 @@ def main(argv: list[str]) -> None:
     T = vol.layout
     dbq = DbqEmu(layout=T, rel=vol.db_rel, subrel=9)
     res: dict[str, Counter] = defaultdict(Counter)
+    sent: dict[str, Counter] = defaultdict(Counter)
+    gm = GdManEmu()
     for tile_id in study_tiles(disc, 69):
         payload = bytes(vol.block(tile_id >> 8).payload)
         s4_start, count = struct.unpack_from(">HH", payload, T[T_DESC_BASE] + 16)
@@ -65,10 +68,13 @@ def main(argv: list[str]) -> None:
                 for entry in entries[:1]:
                     order = [entry, at_node[0]] + [i for i in members if i != at_node[0]]
                     r = build_and_run(dbq, T, payload, s4_start, node, order, from_i=0, to_i=1, tile_id=tile_id,
-                                      entry=JUNCTION)
-                    res[f"ring segment type {jt[members[0]]}"][NAMES.get(r[0], r[0]) if r else "failed"] += 1
+                                      entry=JUNCTION, gd_man=gm)
+                    key = f"ring segment type {jt[members[0]]}"
+                    res[key][NAMES.get(r[0], r[0]) if r else "failed"] += 1
+                    if r and r[0] != "fault":
+                        sent[key][NAMES.get(r[3], r[3])] += 1
     for k in sorted(res):
-        print(k, dict(res[k].most_common()))
+        print(k, dict(res[k].most_common()), "-> sent to vp_man:", dict(sent[k].most_common()))
 
 
 if __name__ == "__main__":

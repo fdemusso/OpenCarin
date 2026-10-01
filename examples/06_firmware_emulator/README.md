@@ -28,6 +28,8 @@ result holds for the function and its inputs, not for the unit as a whole.
 | `gd_bjl` stream reader | `sub_013b0c`, `sub_014240`: the module splits a real `dbq` stream; item creation with points | **executed** | `gd_bjl.py` (`feed_segment`) |
 | `gd_bjl` main pass | `sub_00fbd4` on hand-built junctions: `BIF_SYM_2/3` appear on 21 of 47 value-2 nodes, on none of 1,452 value-0 nodes | **executed** with stubs and a hand-built junction object | `gd_bjl_junction.py` |
 | `gd_bjl` ring detection | `sub_004090`: rings of segment type 5 / 6 -> `ROUNDABOUT`, type 2 -> `NORMAL` | **executed** with stubs and a hand-built junction object | `gd_bjl_ring.py` |
+| `gd_man` type mapping | `sub_0193c0`: the type sent to `vp_man`, run on the `gd_bjl` junction objects (docs/fw/04 §18.2) | **executed** with the same stubs and hand-built objects | `gd_man.py` |
+| `vp_man` dispatcher | `sub_002310`: jump tables by junction type (docs/fw/04 §18.1) | **read** (the tables decoded from the module data); not run | - |
 | `gd_bjl` real handler | route state, requests to `dbq` / `rpmod`, messages | **not run**: the junction object is assembled by hand | - |
 | planner cost / `can_traverse` | `rpmod` `0x464a0`..., `004360` | not run | - |
 

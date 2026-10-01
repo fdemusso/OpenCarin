@@ -1,6 +1,0 @@
-('as on disc', 'node value 0', '3 arms') {'never BIF_SYM': 551}
-('as on disc', 'node value 0', '4 arms') {'never BIF_SYM': 115}
-('as on disc', 'node value 2', '3 arms') {'BIF_SYM_2/3 possible': 6, 'never BIF_SYM': 11}
-('as on disc', 'node value 2', '4 arms') {'BIF_SYM_2/3 possible': 5, 'never BIF_SYM': 3}
-('value forced to 0', 'node value 2', '3 arms') {'never BIF_SYM': 15, 'BIF_SYM_2/3 possible': 2}
-('value forced to 0', 'node value 2', '4 arms') {'never BIF_SYM': 8}

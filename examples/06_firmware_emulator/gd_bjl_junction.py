@@ -6,7 +6,7 @@ linked into a hand-built junction object `J`:  `+0x10` type (`-1`), `+0x0c` poin
 fields are **read** from the listing (docs/fw/04 §13, §16); the route state that builds `J` in the real handler is not run.
 `gp[-0x7df8]` (point equality) is a stub (**hypothesis**: exact equality).
 
-    uv run --with capstone --with unicorn python examples/06_firmware_emulator/gd_bjl_junction.py [disc] [side_sign]
+    uv run --with capstone --with unicorn python examples/06_firmware_emulator/gd_bjl_junction.py [disc] [side_sign] [n_zero] [junction|main]
 """
 
 from __future__ import annotations
@@ -25,14 +25,16 @@ from carin.parser.iso import CarinVolume, IsoImage  # noqa: E402
 from dbq import DbqEmu  # noqa: E402
 from fwemu import FwFault  # noqa: E402
 from gd_bjl import GdBjlEmu  # noqa: E402
+from gd_man import GdManEmu  # noqa: E402
 from run_tile import study_tiles  # noqa: E402
 
+ENTRY = "junction"
 MAIN_PASS = 0xFBD4        # sub_00fbd4(J, flag, flag)
 JUNCTION = 0x4090         # sub_004090(J): the whole processing of one junction (calls sub_00b440, sub_00fbd4, ...)
 
 
 def build_and_run(dbq: DbqEmu, T: dict, payload: bytes, s4_start: int, node: int, arms: list[int], from_i: int = 0,
-                  to_i: int = 1, tile_id: int = 0, entry: int = MAIN_PASS):
+                  to_i: int = 1, tile_id: int = 0, entry: int = MAIN_PASS, gd_man=None):
     """Returns (J type, item roles, ret) or None when a step fails."""
     gd = GdBjlEmu()
     j = gd.place(bytes(0x100))
@@ -61,8 +63,11 @@ def build_and_run(dbq: DbqEmu, T: dict, payload: bytes, s4_start: int, node: int
     # sets its type; when it did, that object holds the result, otherwise `J` itself (`sub_00fbd4` works on `J`)
     new = gd.pools[0x104]
     made = gd.read(new + 0x10, 1)[0] != 0
-    t = gd.read((new if made else j) + 0x10, 1)[0]
-    return t, [gd.read(it + 0x32, 2).hex() for it in items], ret
+    obj = new if made else j
+    t = gd.read(obj + 0x10, 1)[0]
+    # the type `gd_man` would put in the junction descriptor for `vp_man` (`GdManEmu.descriptor_type`, optional)
+    sent = gd_man.descriptor_type(gd, obj) if gd_man is not None else None
+    return t, [gd.read(it + 0x32, 2).hex() for it in items], ret, sent
 
 
 def nodes_with_arms(payload: bytes, T: dict, min_arms: int = 3):
@@ -83,10 +88,14 @@ def main(argv: list[str]) -> None:
     import gd_bjl
     gd_bjl.SIDE_SIGN = int(argv[1]) if len(argv) > 1 else 1
     n_zero = int(argv[2]) if len(argv) > 2 else 300
+    global ENTRY
+    ENTRY = argv[3] if len(argv) > 3 else "junction"      # `junction` = sub_004090 (the whole processing), `main` = sub_00fbd4 alone
     vol = CarinVolume(IsoImage(str(ROOT / "dataset" / f"NAV_DB_{disc}.ISO")))
     T = vol.layout
     dbq = DbqEmu(layout=T, rel=vol.db_rel, subrel=9)
     res = defaultdict(Counter)
+    sent_all: Counter = Counter()
+    gm = GdManEmu()
     zero_seen = 0
     for tile_id in study_tiles(disc, 69):
         payload = bytes(vol.block(tile_id >> 8).payload)
@@ -109,13 +118,17 @@ def main(argv: list[str]) -> None:
                 for f in range(len(arms)):                # the from item has to head the list (`sub_00b88c` runs off its end otherwise)
                     order = [arms[f]] + [x for i, x in enumerate(arms) if i != f]
                     for t in range(1, len(arms)):
-                        r = build_and_run(dbq, T, p, s4_start, node, order, from_i=0, to_i=t, tile_id=tile_id)
+                        r = build_and_run(dbq, T, p, s4_start, node, order, from_i=0, to_i=t, tile_id=tile_id, gd_man=gm,
+                                          entry=JUNCTION if ENTRY == "junction" else MAIN_PASS)
                         if r:
                             types.add(r[0])
+                            if r[0] != "fault":
+                                sent_all[r[3]] += 1
                 res[(label, "node value %d" % val, "%d arms" % len(arms))][
                     "BIF_SYM_2/3 possible" if types & {6, 7} else "never BIF_SYM"] += 1
     for k, c in sorted(res.items()):
         print(k, dict(c))
+    print("descriptor types sent to vp_man over all runs (1 ROUNDABOUT, 5 T_JUNCTION, 6 BIF_SYM_2, 7 BIF_SYM_3, 15 MOTORWAY_EXIT, 16 OTHER_EXIT, 19 OTHER, 20 STYLIZED_DCW_JUNC, 21 NORMAL):", dict(sorted(sent_all.items())))
 
 
 if __name__ == "__main__":
