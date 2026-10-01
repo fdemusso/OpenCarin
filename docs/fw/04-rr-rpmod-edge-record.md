@@ -590,6 +590,13 @@ Consequences:
   roundabout, 2 = a third kind; a link to the JD names `ROUNDABOUT` / `SIMPLE_ROUNDABOUT` / `COMPLEX_ROUNDABOUT`
   (types 1-3) is **not shown**: the segment enum has no value 1 on the discs. Verdict: 5 vs 6 by size = hint (n = 34 + 145,
   63 + 186, 6 exceptions of 428); 2 = unknown.
+- **Where `gd_bjl` reads segment type 2** (`0x6d20`, `0xbbdc`, `0xdf2c`, `0xdfb4`, `0x10798`, `0x107ac`, `0x10f1c`): the
+  pass after `sub_00e8d8` (`0x10738`-`0x10c98`) that may set the junction type to 5 (`T_JUNCTION`) is **skipped when the
+  junction is already type 1 (`ROUNDABOUT`), 22 (`RDAB_EXIT`), 12 (`STF`) or 10 (`SQUARE`), or when the from segment
+  (`obj+0x1c`) or the to segment (`obj+0x20`) has segment type 2** (`0x10778`-`0x107b4`). So type 2 is treated like the
+  roundabout / square junction kinds, never as an ordinary junction arm; types 5 and 6 are not exempt there. At
+  `0x10f1c` the same test clears a flag byte. This supports "segment type 2 belongs to a roundabout-like object", which
+  the data already show (88-89% on `junction=roundabout`), but it does not say how 2 differs from 6. Verdict: hint.
 - It is not shown that the `gd_bjl` object `+0x10` and the pipe's JD `+4` are the same field; the values 6 / 7 and
   `0x13` / `0x14` agree with the name table (`OTHER` and `STYLIZED_DCW_JUNC...` are sensible for a refinement pass),
   which supports it.
