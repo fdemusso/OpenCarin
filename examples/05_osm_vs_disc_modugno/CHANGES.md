@@ -66,7 +66,10 @@ Legend: **explained** = holds on a large sample and could have failed; **hint** 
   marker. Not derivable from OSM. Generator: 0 (we have a class from `highway`).
   RR firmware: `rpmod` copies it into the route chain record as the UAG flag (above). An earlier version of this note linked it to
   the cost routine at `rpmod` `0x03cffc`; that was wrong: edge `+0x1D` there is a level flag of the second edge layout.
-- **`+0x1D` bits 4-6 — unknown, but the planner reads them.** Firmware (`docs/fw/04-rr-rpmod-edge-record.md` §8): `rpmod` takes them on
+- **`+0x1D` bits 4-6 — hint (firmware reading, small n): category of a segment inside a complex junction.** Guidance module `gd_bjl`
+  `sub_00a810` lets a segment of category 1 follow only category 1, 2 only 2, 3-6 any non-zero (`docs/fw/04-rr-rpmod-edge-record.md` §9);
+  the data (class 5 service roads, parking aisles, a one-way road in Duisburg) agrees but does not prove it.
+  The planner reads them too. Firmware (`docs/fw/04-rr-rpmod-edge-record.md` §8): `rpmod` takes them on
   street-level segments as a 3-bit category (0 and 7 neutral; 1-6 in groups {1,3,4,6}, {1,4}, {3,6}, {2,3,5}); one place adds a fixed
   cost when an edge with category 0 is followed by 1, 3, 4 or 6. Data: values 1, 2, 3, 6 only (21708: 3 / 2 / 51 / 96 in the nine areas,
   151 of 152 on class 5; 21734: 3 / 2 / 49 / 118); of those inside the study boxes (108 and 141 segments) form 12 on 98 and 137.

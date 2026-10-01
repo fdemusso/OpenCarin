@@ -118,7 +118,7 @@ Every block is readable except one group:
 7. **Graph traversal**: callers of `sub_01fd80` / `sub_04e02c`, tile crossing via S6 twins,
    level switching via S8.
 8. **Unknown fields the firmware reads**: `+0x10` bit 7 (**UAG, unattributed geometry**, 2026-10-01: firmware `rs_dump -u` + data placeholder class), `+0x18 & 0x10`
-   (**tunnel flag**, chain record `+0x1B`, `fw/04` §7), `+0x1D` bits 4–6 (read by the planner as a 3-bit category, meaning still open, `fw/04` §8), node `+6` flags (data: N = 4 and N = 2, bit 12 on 189 S6 nodes),
+   (**tunnel flag**, chain record `+0x1B`, `fw/04` §7), `+0x1D` bits 4–6 (3-bit category: groups the segments of one complex junction in guidance, `gd_bjl` `sub_00a810`; also used by `rpmod` costs; `fw/04` §8–9), node `+6` flags (data: N = 4 and N = 2, bit 12 on 189 S6 nodes),
    S10 flags 2/3 (data: not dead ends, not restrictions; see `examples/05_osm_vs_disc_modugno/CHANGES.md`), the per-block-type table `gp[-0x7A30]`.
 9. **Issue #6**: where `subrel` (LAYOUT `+2`) comes from; trace the RR `db_pub` setup.
 10. **RR vs Mk3 `db_pub`**: diff the CF=1 decoders (the listings in `docs/fw/` are Mk3).

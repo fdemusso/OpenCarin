@@ -256,3 +256,38 @@ remark that the cost routine at `0x03cffc` uses `+0x10` bit 7 was wrong: `+0x1d`
 - `0x43d68`: category non-zero marks the edge (with slip role 4) in a descriptor.
 The groups overlap (3 is in two), so this is a category with several uses, not a bit mask. The
 meaning of a value is **not** found; the effect is a route-cost or ordering difference.
+
+## 9. Who reads the UAG bit: `dbq` -> `gd_bjl` -> `gd_man` (2026-10-01)
+
+Two separate paths carry `+0x10` bit 7. The route-store one (section 7) ends in `rpmod`'s chain
+record. The guidance one goes through the `dbq` descriptor (section 6):
+
+1. `dbq` `sub_00fc28` writes descriptor byte `+0x2C` = 0 if `+0x10` bit 7 is set, else 1
+   (i.e. 1 = "attributed").
+2. **`gd_bjl` `sub_002238` (`0x2490`-`0x2578`) reads the descriptor** (base `$s1`, bytes `+0x13`...`+0x2F`
+   in one run, the 52-byte shape of section 6) and copies it into its own segment record:
+   descriptor `+0x2C` -> record `+0x67`, `+0x29` (`+0x1D` bits 4-6) -> `+0x5E`, `+0x28` -> `+0x65`,
+   `+0x2A` -> `+0x24` (as 0 / 1), `+0x1D` -> `+0x20` / `+0x21`, `+0x2D` -> `+0x1D`, `+0x2B` -> `+0x22`.
+   Not proven that `$s1` is the `dbq` descriptor and not a copy of it, but offsets and sizes agree.
+3. Record `+0x67` is only copied afterwards (`0x5620`, `0x12a24`), except in `sub_00fbd4` at
+   `0xffa4`: the junction item's byte `+0x61` is set to **1 if the item has no exit segment, else to the
+   exit segment's `+0x67`** (`0xff7c`-`0xffb4`).
+4. **`gd_man` `sub_018efc` reads item `+0x61`** (`0x18f78`) and puts it, with item `+0x60`, the
+   manoeuvre code from item `+0x40 & 0xf` (table: 0x0b, 0x16, 0x37, 0x42, 0x4d) and two pointers'
+   data, into a `0x1c`-byte record at `sp+0x8`, which is sent at `0x19064`-`0x19070` as message type
+   `0x10` (`a0 = 0x10`, `a1 = sp+8`, `a2 = 0x1c`). The record's byte `+0x6` (= `sp+0xe`) is the flag.
+   `sub_019108` then builds similar records for the junction list.
+
+So a segment with `+0x10` bit 7 reaches the guidance output as a **0 in the junction record when the
+junction's exit segment is unattributed**. The BSI test tools name the output fields
+`curr_junction_in_uag` / `next_junction_in_uag` (`nav_tst`, shown next to `dtji_is_valid`), which is
+most likely where this ends, with the sense inverted somewhere after message `0x10`. Not traced past the
+message: the receiver of type `0x10` (probably a module in `navboot`).
+
+What `+0x1D` bits 4-6 do in `gd_bjl`: record `+0x5E` holds the category; `sub_00a810` (`0xa88c`-`0xa990`)
+decides whether a candidate segment can follow the current one in a junction: category 1 only after
+category 1, 2 only after 2, 3 after any non-zero (and not form 11 / `0x10(...) == 0xb`), 4, 5, 6 after any
+non-zero; if the candidate is a class 6 element, the current segment must be class 6 too. So the category
+groups the segments **inside one complex junction** and tells which may be chained. All seen values
+are class 5 (service, parking aisles, one-way tertiary of Duisburg), which fits "small segments that
+make up a junction". This is a reading of the compare chain, not a proof of the names.
