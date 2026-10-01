@@ -219,3 +219,40 @@ Result:
 Method: option `u` is case `0x26a0` of the jump table at `0x1fb4` in `rs_dump` (table index = char - 0x3f,
 target = `0x1fa0` + entry); it sets the flag at `gp - 0x7b95`, read at `0x2dc0`, which selects the string
 `UAG` or `uag` (module offsets `0x503` / `0x4ff`) from chain byte `+0x14`.
+
+## 8. Chain byte `+0x0d`, the second edge layout, and `+0x1D` bits 4-6 (2026-10-01)
+
+**Chain record `+0x0d` is the traversal direction, not an S4 field.** `0x1d914` copies it from bit 0 of
+byte `+0x0c` of the 16-byte chain reference that the route builder receives (`sub_01d2e8`'s second
+argument; bytes `0`-`0xb` of the reference are copied as they are, `+8` is a u16 that `rs_dump` prints
+as the second value of `chain_%04d: (id, n, dir)`). `rs_dump` uses it as a direction: with `-i` it
+walks the chain's intermediate points from the last to the first when `+0x0d == 1` and from the first
+to the last otherwise (`0x2f18`-`0x2fe8` against `0x305c`-`0x30d4`). Nothing in S4 feeds it.
+
+**UAG chains.** In `rpmod` the UAG flag (chain `+0x14`) is only copied: `0x3bd7c`-`0x3bdac` moves chain
+bytes `+0x14`-`+0x19` (UAG, motorway, toll, boat ferry, railway ferry, `+0x19`) into the structure
+that the route-store API returns. No branch on it exists in `rpmod`. The users are outside the
+`bsw2` container (`GUIDANCE_UAG_SPLIT_SCREEN` is a `navboot` string, so `ghandler` / `manager` /
+`supervisor` there), not traced. Correction to section 5: edge `+0x1D` at `0x3cffc` is **not** this
+bit (see next paragraph), so the cost routine there says nothing about UAG.
+
+**The second edge layout (`sub_04e02c`) has no `+0x10` bit 7.** It reads the class byte only as
+`& 0xf` (`+0x18`) and `& 0x70` (`+0x1a`). Its fields: `+0x10` length, `+0x14` junction, `+0x15`
+direction restriction, `+0x16` form, `+0x17` slip role, `+0x18` class, `+0x19` junction high nibble,
+`+0x1a` class-6 subtype, `+0x1b` built-up, `+0x1c` closed-to-cars flag (0 if class 6; 1 if junction or
+high nibble is 3 / 4 by the rule of section 2), `+0x1d` = byte `gp-0x6431 + u16 at block+4` (a
+per-block-type flag: 0 for street level; the planner tests it as "coarse level"), `+0x1e` =
+**S4 `+0x1D` bits 4-6, street level only (0 on coarse levels)**, `+0x20` toll. So the roadmap's old
+remark that the cost routine at `0x03cffc` uses `+0x10` bit 7 was wrong: `+0x1d` there is the level flag.
+
+**`+0x1D` bits 4-6 are read by the planner** as a 3-bit category (`+0x1e` of this layout), with 0 and
+7 neutral and 1-6 told apart:
+- `0x464a0`-`0x464e4`: if the current edge is street level with category 0 and the next edge's category
+  is 1, 3, 4 or 6, a constant (`gp-0x6a78`) is added to a cost accumulator.
+- `0x4672c`-`0x46784` (`sub_0462c0`): categories 1-6 all set one flag, which then triggers a length-based
+  computation (`0x467a4`-`0x467ec`).
+- `0x47908`-`0x47960`: one mode accepts {1, 4} outright, {3, 6} if the class number of the first edge
+  is lower than the other's, another mode accepts {2, 3, 5}.
+- `0x43d68`: category non-zero marks the edge (with slip role 4) in a descriptor.
+The groups overlap (3 is in two), so this is a category with several uses, not a bit mask. The
+meaning of a value is **not** found; the effect is a route-cost or ordering difference.

@@ -64,9 +64,13 @@ Legend: **explained** = holds on a large sample and could have failed; **hint** 
   (1,394 / 1,402 segments on both discs). Today's OSM tags on them: tracks, driveways, `noname=yes`, `access=permit`.
   Reading: where the source gave no functional class the compiler writes class 6 with this bit; it is a data-coverage
   marker. Not derivable from OSM. Generator: 0 (we have a class from `highway`).
-  RR firmware: the edge field fed by it (`+0x1D` of the edge) selects between a default and edge byte `+0x16` at
-  `rpmod` `0x03cffc`–`0x03d03c`, a cost computation; the layout of that edge was not traced.
-- **`+0x1D` bits 4-6 — unknown.** 528 / 192,779 sampled segments (values 6: 446, 3: 76, 1: 3, 2: 2, 5: 1), all on
+  RR firmware: `rpmod` copies it into the route chain record as the UAG flag (above). An earlier version of this note linked it to
+  the cost routine at `rpmod` `0x03cffc`; that was wrong: edge `+0x1D` there is a level flag of the second edge layout.
+- **`+0x1D` bits 4-6 — unknown, but the planner reads them.** Firmware (`docs/fw/04-rr-rpmod-edge-record.md` §8): `rpmod` takes them on
+  street-level segments as a 3-bit category (0 and 7 neutral; 1-6 in groups {1,3,4,6}, {1,4}, {3,6}, {2,3,5}); one place adds a fixed
+  cost when an edge with category 0 is followed by 1, 3, 4 or 6. Data: values 1, 2, 3, 6 only (21708: 3 / 2 / 51 / 96 in the nine areas,
+  151 of 152 on class 5; 21734: 3 / 2 / 49 / 118); of those inside the study boxes (108 and 141 segments) form 12 on 98 and 137.
+  In OSM: service roads (value 3: 11 of 15 matched; 6: 29 of 44), a one-way tertiary road in Duisburg (1, 2), `motorway_link` 3-4 (6). No tag separates them. 528 / 192,779 sampled segments (values 6: 446, 3: 76, 1: 3, 2: 2, 5: 1), all on
   class 5 or 6, speed category 2 or 5, found in Germany, France and the Netherlands but 0 in Puglia and Czechia.
   In the Duisburg tile they sit on parking aisles and one one-way tertiary road (`service=parking_aisle` 28.6% against 0.8%).
   They are spatially clustered, not tied to a tag: no OSM tag separates them (best: `access=no` 9.5%, 6 of 63).
