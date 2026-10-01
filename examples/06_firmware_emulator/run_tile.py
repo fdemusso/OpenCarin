@@ -1,6 +1,6 @@
 """Run the `dbq` descriptor builder on every segment of real tiles and compare it with the field map of docs/fw/04 §6.
 
-    uv run --with capstone --with unicorn python examples/06_emulate_dbq_descriptor/run_tile.py [disc] [tile ...]
+    uv run --with capstone --with unicorn python examples/06_firmware_emulator/run_tile.py [disc] [tile ...]
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from carin.parser.cf1.constants import T_DESC_BASE, T_REC_S4, T_TAIL_S4  # noqa: E402
 from carin.parser.iso import CarinVolume, IsoImage  # noqa: E402
-from emu import DbqEmu  # noqa: E402
+from dbq import DbqEmu  # noqa: E402
 
 
 

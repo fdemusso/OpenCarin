@@ -13,6 +13,7 @@
 > | `+0x10` bit 7 | **not fully attributed** (route chain `+0x14` "UAG"; guidance `FULLY_ATTRIB` is its inverse); no routing or drawing effect found, only carried and printed | 7, 9, 10 |
 > | `+0x18 & 0x10` | **tunnel flag** (route chain `+0x1B`, `BSI_RS_TUNNEL_MASK` = 16) | 7 |
 > | `+0x1D` bits 4-6 | **3-bit category** read by the planner (`rpmod` second edge layout `+0x1E`, adds a cost for some pairs) and by guidance (`gd_bjl` `sub_00a810`, chains segments of one junction); value meanings not found | 8, 9 |
+> | `+0x10` bit 7 in the planner | **both** edge layouts carry it: layout 1 edge `+0x1d` (set when the bit is set), layout 2 edge `+0x1f` (set when the bit is clear). Found by running the builders (section 15); readers of those edge bytes not traced | 15 |
 > | chain `+0x0d` | traversal direction of the chain, not an S4 field | 8 |
 > | node `+6` `& 7 == 2` | **fork / merge node**: `gd_bjl` counts the arms within 60 degrees that touch it; 2 arms make a `BIF_SYM_2` junction, 3 a `BIF_SYM_3`. Data: 28 / 29 and 26 / 27 nodes have such arms against 18% of node value 0 | 12, 13 |
 > | node `+6` bits 5-4, bit 3 | bits 5-4 == 2 = planner's edge node; bit 3 never set, no reader | 12 |
@@ -256,8 +257,9 @@ that the route-store API returns. No branch on it exists in `rpmod`. The users a
 `supervisor` there), not traced. Correction to section 5: edge `+0x1D` at `0x3cffc` is **not** this
 bit (see next paragraph), so the cost routine there says nothing about UAG.
 
-**The second edge layout (`sub_04e02c`) has no `+0x10` bit 7.** It reads the class byte only as
-`& 0xf` (`+0x18`) and `& 0x70` (`+0x1a`). Its fields: `+0x10` length, `+0x14` junction, `+0x15`
+**The second edge layout (`sub_04e02c`)** (**corrected in section 15**: an earlier version said it has no `+0x10`
+bit 7; it does, `& 0x80` at `0x4e140`-`0x4e158`, edge `+0x1f`, which the first reading missed because it searched for
+the masks `0xf` and `0x70` only). It reads the class byte as `& 0xf` (`+0x18`), `& 0x70` (`+0x1a`) and `& 0x80`. Its fields: `+0x10` length, `+0x14` junction, `+0x15`
 direction restriction, `+0x16` form, `+0x17` slip role, `+0x18` class, `+0x19` junction high nibble,
 `+0x1a` class-6 subtype, `+0x1b` built-up, `+0x1c` closed-to-cars flag (0 if class 6; 1 if junction or
 high nibble is 3 / 4 by the rule of section 2), `+0x1d` = byte `gp-0x6431 + u16 at block+4` (a
@@ -603,7 +605,7 @@ Consequences:
 
 ## 14. Running `dbq` `sub_00fc28` in an emulator (2026-10-01)
 
-`examples/06_emulate_dbq_descriptor` loads the RR `dbq` module in Unicorn (MIPS32 BE) and calls the descriptor builder
+`examples/06_firmware_emulator` loads the RR `dbq` module in Unicorn (MIPS32 BE) and calls the descriptor builder
 of section 6 on real tiles of both discs; see its `README.md` for the harness (what is stubbed, two toolchain traps: the
 3-operand `mult[u] rd, rs, rt` and a Unicorn delay-slot load bug). It is a test of the firmware reading **by execution**,
 on the same code the unit runs but not on a unit.
@@ -625,3 +627,46 @@ Results (the first three tiles of the Bari-Modugno study area):
 
 Not covered: the shape decoder is a stub (bytes that follow the geometry would be wrong), the caller's arguments `a2` /
 `a3` (descriptor `+0x1C`, `+0x2B`) are 0, and the junction pass of `gd_bjl` (section 13) is not run yet.
+
+## 15. The planner's edge builders run in the emulator (2026-10-01)
+
+`examples/06_firmware_emulator/rpmod_edge.py` runs both `rpmod` edge builders, `sub_01fd80` (first layout, `(edge, tile)`
+with the S4 offset at `edge + 8`) and `sub_04e02c` (second layout, `(edge, tile, S4 record)`), on the real tiles and
+flips every input bit (`dependencies.py ... rpmod` / `rpmod2`; 40 segments per disc, both discs agree except one rare
+node bit). Evidence level: **executed** (same code as the unit, not on a unit). Every row below was also found by reading
+in sections 2 and 8 except those marked **new**.
+
+| Edge byte, layout 1 / layout 2 | Follows | Notes |
+|---|---|---|
+| `+0x12` / `+0x12`, `+0x13` | S4 `+0x0C`, `+0x0D` | length |
+| `+0x14` / `+0x14` | S4 `+0x11` bits 0-3 | junction type |
+| `+0x15` / `+0x15` | S4 `+0x0B` bits 4-5 | direction |
+| `+0x16` / `+0x16` | S4 `+0x0B` bits 0-3 | form |
+| `+0x17` / `+0x18` | S4 `+0x10` bits 0-3 | class |
+| `+0x18` / `+0x19` | S4 `+0x11` bits 4-7 | junction high nibble |
+| `+0x19` / `+0x1a` | S4 `+0x10` bits 4-6 | class 6 subtype |
+| `+0x1a` / `+0x1b` | S4 `+0x0A` bit 7 | built-up |
+| `+0x1b` / `+0x1c` | S4 `+0x11` bit 2 and `+0x10` bits 0-3 (partial) | closed-to-cars flag (section 2 rule) |
+| **`+0x1d` / `+0x1f` (new)** | S4 `+0x10` bit 7 | **first layout: edge `+0x1d` = bit set; second layout: edge `+0x1f` = bit clear** |
+| `+0x1e` / `+0x20` | S4 `+0x0B` bit 6 | toll |
+| `+0x1f` / `+0x21` | S4 `+0x18` bit 4 | **tunnel flag** (so the planner edge carries it in both layouts) |
+| `+0x20` / `+0x1e` | S4 `+0x1D` bits 4-6 | the 3-bit category |
+| `-` / `+0x17` | S4 `+0x18` bits 0-1 | slip role (layout 2 only) |
+| `+0x26`, `+0x27` / `+0x2c`, `+0x2d` | S4 `+0x0E`, `+0x0F` | bearings |
+| `+0x28`, `+0x29` / `+0x2e`, `+0x2f` | node `+6` bits 0 and 2 | dead end / `& 7` in {4, 5} |
+| `+0x3c`, `+0x3d` / `+0x44`, `+0x45` | node `+6` bits 6-7 | level |
+| `-` / `+0x30`, `+0x31` | node `+6` bits 4-5 (reacts on 5 of 40 segments) | the edge-node flag of section 12 (bits 5-4 == 2) |
+| `-` / `+0x32`, `+0x33` | node `+6` bit 2 (and bit 1) | `& 7` in {4, 5} (section 12) |
+| `+0x43..+0x5d` / similar | S4 `+0x12`, `+0x13` | a pointer into the turn section (counts and offsets), many bytes |
+
+**S4 bits that neither builder reads** (both discs, 40 segments each; "builder" here means only these two functions,
+the planner may read other bytes elsewhere): `+0x04`..`+0x09`, `+0x14`..`+0x17`, `+0x19`..`+0x1C` (the whole `+0x1C`),
+`+0x1E`, `+0x1F`, `+0x0A` bits 0-6 (**speed**), `+0x0B` bit 7, `+0x1D` bits 0-3 and 7, `+0x18` bits 5-7 (and 2-3).
+In particular **the planner's edge does not carry the speed category, the width / lane category (`+0x1D` bits 1-3), the
+bridge bit or the house-number bit**; speed would have to be read by another function.
+
+What this changes in the earlier text:
+- Section 8, "has no `+0x10` bit 7": wrong, corrected there. Both edge layouts carry the bit, one as `set`, one as
+  `clear`. Whether any cost or ordering code reads those edge bytes was **not** traced (the routine at `0x3cffc` reads
+  `+0x1d` of layout 2, the level flag, not `+0x1f`).
+- The tunnel flag is in the planner's edge (`+0x1f` / `+0x21`), not only in the chain record.
