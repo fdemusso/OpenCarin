@@ -55,7 +55,9 @@ Legend: **explained** = holds on a large sample and could have failed; **hint** 
 
 ### 2. `+0x10` bit 7, `+0x1D` bits 4-6, `+0x18 & 0x10`
 
-- **`+0x10` bit 7 — hint (strong): placeholder class.** Always on class 6 / subtype 1 (3,013 of 3,021 in the random sample).
+- **`+0x10` bit 7 — explained (data + firmware): unattributed-geometry (UAG) flag = placeholder class.** Firmware: `rpmod` copies it to byte
+  `+0x14` of the route chain record, printed by `rs_dump -u` as `UAG` (`docs/fw/04-rr-rpmod-edge-record.md` §7), with `POS_UAG` /
+  `PARTLY_DIGIT._AREA` in the test tools. Data below. Always on class 6 / subtype 1 (3,013 of 3,021 in the random sample).
   Absent in Puglia (0 of 42,518). In Slovenia the whole minor road network of 21708 (1,907 segments) is class 6 / sub 1 /
   bit 7; on 21734 the same roads are class 4 (333 segments), 5 (215), 6 without the bit (324), and 747 keep it. Of the
   384 paired segments with the bit on 21708, 28 drop only the bit, 17 become class 4, 10 class 5. In Czechia it stays
@@ -74,7 +76,12 @@ Legend: **explained** = holds on a large sample and could have failed; **hint** 
   tracks have it, so it is not "all tracks". On the disc it is almost only class 5 (1,811 of 1,953). 21734 adds 43 and
   removes 13 on identical shapes. Generator: 4 on class 5/6 tracks and paths with an unpaved surface is a reasonable
   default; unverified rule.
-- **`+0x18 == 0x10` — unknown.** 8 segments in Puglia (none matched), 68 in the random sample, classes 0-3 and on main roads.
+- **`+0x18 & 0x10` — tunnel flag (firmware + data).** Firmware: `rpmod` copies it into byte `+0x1B` of the route chain record, which
+  `rs_dump` prints as " tunnel" (`BSI_RS_TUNNEL_MASK` = 16; `docs/fw/04-rr-rpmod-edge-record.md` §7). Data (`+0x18` = 0x10 / 0x11-0x13):
+  8 matched segments (n = 3 on 21708, 5 on 21734), **8 / 8 are underpasses in today's OSM** (`layer=-1`, 5 with `tunnel=yes`, "sottovia"),
+  all with `+0x1C` = 0x1D. Weak the other way: of 21 / 23 matched OSM tunnels 1 / 4 carry the bit; most tunnels have `+0x1C` = 0x16 and
+  no `+0x18` bit. Small n; verdict hint (firmware-backed). A generator can leave it 0 (nothing was seen to depend on it besides a
+  tunnel display) or set it on short underpasses.
 
 ### 3. `+0x11 >> 4` (high nibble) and junction 3 / 4 — hint
 
@@ -181,7 +188,7 @@ Fields that change: speed 3.3% (11 -> 5 for 283: class 4 -> 5 for 232), form 3.3
 ## Questions only a unit (or the RR firmware) can answer
 
 1. Does form 7 or flag 2/3 on a segment change the route (time cost or turn legality) on a unit? Try the same road with and without.
-2. What does the RR cost routine at `rpmod` `0x03cffc` do with edge `+0x1D` (`+0x10` bit 7) and `+0x16`? Trace which edge layout `$s2` is there.
+2. What does the unit do with a UAG chain (split screen, "partly digitized area" notice, route cost)? The flag itself is now explained.
 3. Is `+0x18 == 4` read as "unpaved"? Is it used for route cost? (`sub_01fd80` edge `+0x1F` only reads the `0x10` bit.)
 4. What do junction 3 with high nibble 1 / 4 do in the planner (we only have the can_traverse rule)?
 5. Does the unit draw a bridge differently when `+0x1C` is 0x18, and the S7 flag points mark where?

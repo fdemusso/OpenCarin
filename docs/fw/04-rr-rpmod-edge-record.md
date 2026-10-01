@@ -179,3 +179,43 @@ What the firmware strings say (all outside the data path, so a lead, not a resul
   `+0x1B` (junction 3 / 4 closed unless the high nibble is 4, §2) and the data-side hint that
   junction 3 is pedestrian areas. Not verified either.
 - No string names `+0x1D` bits 4–6.
+
+## 7. The route chain record and `rs_dump -u` (2026-10-01)
+
+`rs_dump` (`bsw_tools`) reads the route store with `RP_rs_get_chaindata` and prints one record per
+chain. The record is the one `rpmod` writes at `0x156c4`–`0x15824` (and `0x17b00`–`0x17c40`,
+the same code for the other route variant). Field by field (`rs_dump` print code at `0x2c04`–`0x2e38`,
+strings from its data; `rpmod` writer; the packed bits are those of section 5):
+
+| Chain byte | `rs_dump` prints | `rpmod` source (packed bit) | S4 source |
+|---|---|---|---|
+| `+0x0c` | slip role (`& 7`) | `0xc` bits 0-2 | slip role (`+0x18 & 3`, DB-REL >= 27) |
+| `+0x0d` | third value of `chain_%04d: (id, n, x)` | `0xc` bit 7 | not traced |
+| `+0x14` | **`UAG` / `uag` (option `-u`, "Dump unattributed geometry flag")** | `0xc` bit 4 | **`+0x10` bit 7** |
+| `+0x17` | " motorway" | `0xf` bit 4: class < 4 and form < 4 | class, form |
+| `+0x18` | " toll road" | `0xf` bit 6 | `+0x0B` bit 6 |
+| `+0x19` | " boat ferry" | `0xe` bit 0 | form 14 |
+| `+0x1a` | " railway ferry" | `0xe` bit 1 | form 15 |
+| `+0x1b` | **" tunnel"** | `0xf` bit 7 | **`+0x18 & 0x10`** |
+| `+0x1c` | " mountain pass" | `0xf` bit 5, always cleared by the packer (`0x1dc58`) | none |
+
+The order matches the `BSI_RS_*_MASK` list the test tool `nav_tst` prints (1 motorway, 2 toll
+road, 4 boat ferry, 8 railway ferry, 16 tunnel, 32 mountain pass), so the chain bytes `+0x17`-`+0x1c`
+are those six route attributes. `+0x14` is a seventh flag, shown only with `-u`.
+
+Result:
+- **`+0x10` bit 7 = the "unattributed geometry" (UAG) flag of the chain.** The firmware text around
+  it (`POS_UAG`, `curr_junction_in_uag`, `PARTLY_DIGIT._AREA`, `GUIDANCE_UAG_SPLIT_SCREEN`, "Toggle
+  RDA in partly digitized area") shows the unit treats such chains as geometry without attributes.
+  This is the firmware side of the data finding (class 6 / subtype 1 placeholder).
+- **`+0x18 & 0x10` = the tunnel flag** (`BSI_RS_TUNNEL_MASK` = 16). Data: all 8 matched segments with
+  the bit (3 on 21708, 5 on 21734) are underpasses in today's OSM (`layer=-1`, `tunnel=yes` on 5 of
+  8; "sottovia"), all with `+0x1C` = 0x1D. The reverse is weak: of 21 / 23 matched OSM tunnels, 1 / 4
+  carry the bit (most are `+0x1C` = 0x16).
+- Mountain pass is never set by this build, whatever the data holds.
+- Still open: `+0x1D` bits 4-6 (not copied into the chain record; only into the `dbq` descriptor
+  of section 6), `+0x0d` of the chain record.
+
+Method: option `u` is case `0x26a0` of the jump table at `0x1fb4` in `rs_dump` (table index = char - 0x3f,
+target = `0x1fa0` + entry); it sets the flag at `gp - 0x7b95`, read at `0x2dc0`, which selects the string
+`UAG` or `uag` (module offsets `0x503` / `0x4ff`) from chain byte `+0x14`.

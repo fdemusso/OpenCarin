@@ -117,8 +117,8 @@ Every block is readable except one group:
    `sub_01fd80`; recover the cost function and how turn restrictions (S10) apply.
 7. **Graph traversal**: callers of `sub_01fd80` / `sub_04e02c`, tile crossing via S6 twins,
    level switching via S8.
-8. **Unknown fields the firmware reads**: `+0x10` bit 7 (data: placeholder class, 2026-10-01; the `rpmod` cost routine at
-   `0x03cffc` uses the edge copy; not traced), `+0x1D` bits 4–6, `+0x18 & 0x10`, node `+6` flags (data: N = 4 and N = 2, bit 12 on 189 S6 nodes),
+8. **Unknown fields the firmware reads**: `+0x10` bit 7 (**UAG, unattributed geometry**, 2026-10-01: firmware `rs_dump -u` + data placeholder class), `+0x18 & 0x10`
+   (**tunnel flag**, chain record `+0x1B`, `fw/04` §7), `+0x1D` bits 4–6 (still open), node `+6` flags (data: N = 4 and N = 2, bit 12 on 189 S6 nodes),
    S10 flags 2/3 (data: not dead ends, not restrictions; see `examples/05_osm_vs_disc_modugno/CHANGES.md`), the per-block-type table `gp[-0x7A30]`.
 9. **Issue #6**: where `subrel` (LAYOUT `+2`) comes from; trace the RR `db_pub` setup.
 10. **RR vs Mk3 `db_pub`**: diff the CF=1 decoders (the listings in `docs/fw/` are Mk3).
@@ -139,7 +139,7 @@ Every block is readable except one group:
 
 `examples/05_osm_vs_disc_modugno/CHANGES.md` compares both DVDs with today's OSM, field by field. Known now: `+0x1D` bit 0 = has house numbers;
 speed category = default per (class, form, built-up), not `maxspeed`; node flags follow degree, level and section; S10 flag 0 / 1 entries match OSM
-restrictions; `+0x1C` 0x18 = bridge, S7 flag 2 with it. Hints: `+0x10` bit 7 (placeholder class, write 0), `+0x18` = 4 (unpaved track), junction 3
+restrictions; `+0x1C` 0x18 = bridge, S7 flag 2 with it. `+0x10` bit 7 = UAG / placeholder class (write 0), `+0x18 & 0x10` = tunnel flag. Hints: `+0x18` = 4 (unpaved track), junction 3
 (pedestrian areas), signposts on ramps from `destination`. Not known: form 7 (write 11 / 12), S10 flags 2 / 3, `+0x1D` bits 4–6, node nibble 4 and 2,
 TMC (location table). Not done: the 2015 OSM snapshot (Overpass attic did not answer), nothing run on a unit.
 
