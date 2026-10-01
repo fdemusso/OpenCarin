@@ -600,3 +600,28 @@ Consequences:
 - It is not shown that the `gd_bjl` object `+0x10` and the pipe's JD `+4` are the same field; the values 6 / 7 and
   `0x13` / `0x14` agree with the name table (`OTHER` and `STYLIZED_DCW_JUNC...` are sensible for a refinement pass),
   which supports it.
+
+## 14. Running `dbq` `sub_00fc28` in an emulator (2026-10-01)
+
+`examples/06_emulate_dbq_descriptor` loads the RR `dbq` module in Unicorn (MIPS32 BE) and calls the descriptor builder
+of section 6 on real tiles of both discs; see its `README.md` for the harness (what is stubbed, two toolchain traps: the
+3-operand `mult[u] rd, rs, rt` and a Unicorn delay-slot load bug). It is a test of the firmware reading **by execution**,
+on the same code the unit runs but not on a unit.
+
+Results (the first three tiles of the Bari-Modugno study area):
+- **The descriptor matches the field map of sections 6 and 11.2 on 13 bytes for every segment**: 758 of 758 on 21708,
+  1,164 of 1,164 on 21734, no mismatch (`+0x12 +0x13 +0x14 +0x18 +0x19 +0x1A +0x1D +0x24 +0x25 +0x26 +0x29 +0x2A +0x2C`).
+- **Which input bit decides which descriptor byte** (every bit of the S4 record and of both node records flipped, 40
+  segments per disc; the two discs agree except for three rare low bits): `+0x1D` S4 `+0x11` bits 0-3; `+0x1E` S4 `+0x11`
+  bits 4-7 (only when the junction type is set and the high nibble is not 4); `+0x1F` S4 `+0x0B` bits 4-5; `+0x20` class;
+  `+0x21` S4 `+0x1D` **bits 1-3** (three bits; `03-road-network.md` §6.7 names bits 1-2); `+0x22` form; `+0x23` S4 `+0x18`
+  bits 0-1; `+0x27` S4 `+0x0A` bits 0-6; `+0x28` bit 7; `+0x29` S4 `+0x1D` bits 4-6; `+0x2C` `+0x10` bit 7; the bearings
+  `+0x10` / `+0x11` and `+0x16` / `+0x17` from S4 `+0x0E` / `+0x0F` scaled by `0x8ca0 >> 8`; `+0x30` from S4 `+0x1E` /
+  `+0x1F` (a count from the signpost pointer, hint). No S4 bit moves `+0x15`, `+0x1B`, `+0x2D..+0x2F`, `+0x31..+0x33`.
+- **S4 bits that never reach the guidance through `dbq`** (same on both discs): `+0x0B` bits 6-7 (toll), `+0x18` bits 2-7
+  (**including the tunnel flag `0x10`**), `+0x1C` bit 3 (bridge), `+0x1D` bit 0 (house numbers) and bit 7 (built-up, only
+  DB-REL < 21), and the pointer bytes. So `gd_bjl` never sees toll, tunnel or bridge from this module; the tunnel flag
+  reaches the route chain through `rpmod` (section 7).
+
+Not covered: the shape decoder is a stub (bytes that follow the geometry would be wrong), the caller's arguments `a2` /
+`a3` (descriptor `+0x1C`, `+0x2B`) are 0, and the junction pass of `gd_bjl` (section 13) is not run yet.
