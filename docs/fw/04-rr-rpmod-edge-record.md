@@ -441,5 +441,35 @@ What follows:
 - **`& 7` in {4, 5} are one class for the planner.** N = 4 (36 / 37 nodes, degree-2 street-level nodes) behaves like N = 5
   (degree 2): the difference is not used by the cost code that was found. The data study could not tell them apart either.
 - **`& 7 == 2` is read by the guidance** (`gd_bjl`), consistent with the data hint that N = 2 nodes (30 / 28) are slip-road and
-  main-road junctions; what the segment record `+0x1e` / `+0x1f` flag does after that is not traced.
+  main-road junctions; what the flag does is in section 13.
 - **Bit 3 is never set** in the 64,395 boxed nodes of both discs and is read by nobody found; a generator keeps it 0.
+
+## 13. What `gd_bjl` does with the node value 2 flag (2026-10-01)
+
+Segment record `+0x1E` / `+0x1F` (`gd_bjl` `0x2490`-`0x24d8`) = 1 when the segment's start / end node has `& 7 == 2`
+(descriptor `+0x13` / `+0x19`). The only reader found is `sub_00e8d8` (`0xe8d8`-`0xebcc`, called from `0x10738` and
+`0x11b78`), a pass over the segment list of one junction object (`s4`, list head at `obj+0x24`). For each other
+segment it skips:
+- segments with a junction type (`item+0x21`) unless `sub_0135c0` is true or `item+0x5d` is set;
+- segments with `item+0x22 == 2` (the query-dependent value of section 11);
+- segments whose angle `|item+0x30|` is not below 60 degrees (90 degrees when the junction `+0x10 == 3` and
+  `sub_013504` is false or its class byte `+0x5f` is 7, with the upper bound 180 degrees).
+
+Of the survivors, it counts those whose **start** point equals the junction centre (`obj+0x48` against `item+0x38`)
+and `+0x1E` is set, or whose **end** point equals it (`item+0x40`) and `+0x1F` is set. Result:
+
+| Count | Effect |
+|---|---|
+| 2 | junction object `+0x10` (type) := **6**; the two segments get `+0x33` := 1 and 2 |
+| 3 | junction object `+0x10` := **7**; the three segments get `+0x33` := 1, 4, 2 |
+| other | unchanged |
+
+When it fires, a flag byte in the caller's frame (`sp+0xc`) is set, and the caller sets byte `+0xc` of the
+junction. `sub_00e804` (`0xe804`) then treats junction types 6 and 7 as "attributed" (sets `+0x11` := 1).
+
+So the node value 2 marks a node **where two or three roughly parallel segments (within 60 degrees of the
+current one) meet**, and the guidance turns that into a junction of kind 6 or 7 with an ordering (`+0x33`) of its
+arms. Reading: a fork / merge node (carriageway split, slip-road branch), which agrees with the data hint (slip-road
+and main-road junctions). **Hint, not explained**: the kind names of 6 and 7 were not decoded (the `vp_man` dump
+prints the number), the readers of `+0x33` were not traced, and the data sample (30 / 28 nodes) was not
+re-checked against "two or three segments within 60 degrees".

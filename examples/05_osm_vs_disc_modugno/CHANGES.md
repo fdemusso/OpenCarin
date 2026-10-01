@@ -158,7 +158,7 @@ Puglia, 21708: 45,185 nodes (`05_nodes.py`).
   all 48 have `+0x1C` != 0x10 (bridge / tunnel bits) but today's OSM calls 29 / 30 matched ones ground level: **unknown**. Firmware: `& 7` 4 and 5 are one class in
   `rpmod` (`sub_04e02c`), so N = 4 is a variant of the degree-2 node; hint.
   N = 2 (40 nodes, degree 3–4): slip-road and main-road junctions (12 of 29 interior nodes have a slip-form segment against 562 / 21,372 for N = 0):
-  **unknown**; firmware: `& 7 == 2` is read by the guidance (`gd_bjl`), which fits a junction with slip roads; hint.
+  **unknown**; firmware: `& 7 == 2` is read by the guidance (`gd_bjl`), which counts segments with such a node within 60 degrees and makes a junction of kind 6 (two) or 7 (three) out of them, i.e. a fork / merge node (`docs/fw/04-rr-rpmod-edge-record.md` §13); hint.
 - **Low byte — explained:** 1 and 2 on the two nodes of a crossing without junction (101 and 95; 89 and 88 have N = 5).
 - Disc against disc (15,361 nodes at the same position): 208 change flags, almost all N = 0 <-> 5 (degree changed: `0xd000 -> 0xd500` 60,
   `0xd100 -> 0xd500` 48) or level (`0xd000 -> 0x9000` 19). Generator: compute from the graph (degree, level, section, crossings).
