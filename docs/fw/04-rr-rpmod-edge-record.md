@@ -549,14 +549,14 @@ the `+0x20` segment's `+0x32` := 4, `+0x68` := 1. With one role, the table is co
 
 So the table is the **list of the arms that survive as distinct branches of a junction of kind `0x13` / `0x14`**,
 with their side; the pass merges junctions whose arms collapse to one or two on a side. This is a reading of the
-control flow. Junction types `0x13` / `0x14` are `OTHER` and `STYLIZED_DCW_JUNCTION` (section 13.3). Not traced: the meaning of `obj+0x40` (3, 4, 5, `0x11`, `0x12`) and
+control flow. Junction types `0x13` / `0x14` are `OTHER` and `STYLIZED_DCW_JUNC...` (section 13.3). Not traced: the meaning of `obj+0x40` (3, 4, 5, `0x11`, `0x12`) and
 the effect of `+0x6c` / `+0x6d` / `+0x68`. Verdict: **hint**; none of it is on the disc, so no data can test it.
 
 ### 13.3 Names of the junction types (2026-10-01)
 
 `vp_man`'s junction dump decoder (`0x1db08`-`0x1dd60`, string `JD -> type: %s(%d)`) switches on `JD+4` minus 1 over 22
-cases (anything else prints `?????`). The names are strings of `navboot`; some are stored cut to 14-17 characters
-by the dump's copy of the table (`SIMPLE_ROUNDAB`), the full name is in the string pool.
+cases (anything else prints `?????`). The names are strings of `navboot`; some are cut in the table itself (`SIMPLE_ROUNDAB`, `ARRIVAL_DESTIN`, `STYLIZED_DCW_JUNC`; the first has a full
+copy `SIMPLE_ROUNDABOUT` in the pool, the others none, so their tails are unknown).
 
 | Type | Name | Type | Name |
 |---|---|---|---|
@@ -565,10 +565,10 @@ by the dump's copy of the table (`SIMPLE_ROUNDAB`), the full name is in the stri
 | 3 | `COMPLEX_ROUNDABOUT` | 14 | `COMPLEX_STF` |
 | 4 | `Y_JUNCTION` | 15 | `MOTORWAY_EXIT` |
 | 5 | `T_JUNCTION` | 16 | `OTHER_EXIT` |
-| **6** | **`BIF_SYM_2`** (bifurcation, symmetric, 2 arms) | 17 | `ARRIVAL_DESTINATION` |
+| **6** | **`BIF_SYM_2`** (bifurcation, symmetric, 2 arms) | 17 | `ARRIVAL_DESTIN` (cut) |
 | **7** | **`BIF_SYM_3`** (3 arms) | 18 | `ARRIVAL_NEIGHBOURHOOD` |
 | 8 | `BIF_ASYM_L` | 19 (`0x13`) | `OTHER` |
-| 9 | `BIF_ASYM_R` | 20 (`0x14`) | `STYLIZED_DCW_JUNCTION` |
+| 9 | `BIF_ASYM_R` | 20 (`0x14`) | `STYLIZED_DCW_JUNC` (cut) |
 | 10 | `SQUARE` | 21 | `NORMAL` |
 | 11 | `PARKING_PLACE` | 22 | `RDAB_EXIT` |
 
@@ -580,5 +580,5 @@ Consequences:
   the same. Section 11's guess "2 = `SIMPLE_ROUNDABOUT`" stays unverified: the S4 type 2 and the JD type 2 are not
   proven to share a table, but the roundabout data (88-89% of S4 type 2 on `junction=roundabout`) fits it.
 - It is not shown that the `gd_bjl` object `+0x10` and the pipe's JD `+4` are the same field; the values 6 / 7 and
-  `0x13` / `0x14` agree with the name table (`OTHER` and `STYLIZED_DCW_JUNCTION` are sensible for a refinement pass),
+  `0x13` / `0x14` agree with the name table (`OTHER` and `STYLIZED_DCW_JUNC...` are sensible for a refinement pass),
   which supports it.
