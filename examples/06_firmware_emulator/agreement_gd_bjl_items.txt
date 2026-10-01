@@ -1,0 +1,2 @@
+21708: 549 items, junction types {0: 515, 6: 3, 9: 31}, mismatches: none
+21734: 959 items, junction types {0: 937, 9: 22}, mismatches: none

@@ -14,6 +14,7 @@
 > | `+0x18 & 0x10` | **tunnel flag** (route chain `+0x1B`, `BSI_RS_TUNNEL_MASK` = 16) | 7 |
 > | `+0x1D` bits 4-6 | **3-bit category** read by the planner (`rpmod` second edge layout `+0x1E`, adds a cost for some pairs) and by guidance (`gd_bjl` `sub_00a810`, chains segments of one junction); value meanings not found | 8, 9 |
 > | `+0x10` bit 7 in the planner | **both** edge layouts carry it: layout 1 edge `+0x1d` (set when the bit is set), layout 2 edge `+0x1f` (set when the bit is clear). Found by running the builders (section 15); readers of those edge bytes not traced | 15 |
+> | `gd_bjl` item from the `dbq` descriptor | executed chain S4 -> descriptor -> item; item `+0x1e` / `+0x1f` = node value 2; item `+0x24` = S4 `+0x1C` bit 7 (set), a reading corrected | 16 |
 > | chain `+0x0d` | traversal direction of the chain, not an S4 field | 8 |
 > | node `+6` `& 7 == 2` | **fork / merge node**: `gd_bjl` counts the arms within 60 degrees that touch it; 2 arms make a `BIF_SYM_2` junction, 3 a `BIF_SYM_3`. Data: 28 / 29 and 26 / 27 nodes have such arms against 18% of node value 0 | 12, 13 |
 > | node `+6` bits 5-4, bit 3 | bits 5-4 == 2 = planner's edge node; bit 3 never set, no reader | 12 |
@@ -670,3 +671,26 @@ What this changes in the earlier text:
   `clear`. Whether any cost or ordering code reads those edge bytes was **not** traced (the routine at `0x3cffc` reads
   `+0x1d` of layout 2, the level flag, not `+0x1f`).
 - The tunnel flag is in the planner's edge (`+0x1f` / `+0x21`), not only in the chain record.
+
+## 16. `gd_bjl` item creation in the emulator (2026-10-01)
+
+`examples/06_firmware_emulator/gd_bjl.py` runs the descriptor case of the `gd_bjl` message handler (`sub_002238`,
+`0x23f8`-`0x2838`) with a hand-built stack frame: descriptor at `sp + 0x2c`, junction object at `sp + 0xd4`, parser state
+zero. Around it, the harness gives the module its context: `gp[-0x7a80]` points to a context whose `+0x108` is a free list
+of `0x74`-byte items linked through `+0` (**read** from `sub_004dd0`, the allocator), and the OS-service gateway
+`gp[-0x5df0]` (the trampoline set of this module; id `0x78` is a memset, **hypothesis** from its arguments). The
+descriptors are those of the `dbq` emulator (section 14), so the chain is **S4 record -> `dbq` descriptor -> `gd_bjl`
+item, executed**.
+
+Result (**executed**, 549 items on 21708 and 959 on 21734, no mismatch): the item bytes `+0x1d +0x1e +0x1f +0x20 +0x21
++0x22 +0x24 +0x5c +0x5d +0x5e +0x5f +0x60 +0x61 +0x62 +0x63 +0x65 +0x66` follow the descriptor as read in sections 9 and
+13. In particular **item `+0x1e` / `+0x1f` (the node value 2 flags of section 13) equal `descriptor +0x13 / +0x19 == 2`**.
+Correction of a reading: item `+0x24` is `1` when descriptor `+0x2a` is **0**, i.e. when S4 `+0x1C` bit 7 is **set**
+(the copy at `0x247c`-`0x248c` is a branch-likely, whose delay slot runs only when the branch is taken; the first reading
+had it the other way round). Item `+0x14` = length (descriptor `+0x0c` / 100), `+0x2c` / `+0x2e` = the bearings / 100
+(`0x2468`-`0x24ec`).
+
+Not run, and so still **read** only: the junction passes `sub_00e8d8` (section 13), the refinement pass (13.2) and
+`sub_00fbd4`. They need the junction object (`+0x10` type, `+0x1c` / `+0x20` end segments, `+0x24` list, `+0x38..+0x48`
+positions) and item positions; the positions come with other messages of the `dbq` output stream (`dbq` emits more
+buffers than the descriptor), whose format is not decoded yet. That is the next step.

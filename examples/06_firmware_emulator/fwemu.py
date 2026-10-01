@@ -40,7 +40,6 @@ PAGE = 0x1000
 GPR = [getattr(M, f"UC_MIPS_REG_{n}") for n in
        "ZERO AT V0 V1 A0 A1 A2 A3 T0 T1 T2 T3 T4 T5 T6 T7 S0 S1 S2 S3 S4 S5 S6 S7 T8 T9 K0 K1 GP SP FP RA".split()]
 NAMES = "zero at v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t6 t7 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra".split()
-GATEWAY = -0x3EA8          # gp slot of the OS-service gateway (same in the modules read so far)
 
 Handler = Callable[["FwEmu"], "int | None"]
 
@@ -74,7 +73,7 @@ class FwEmu:
         self.heap = HEAP
         self.user = USER
         self.stubs: dict[int, tuple[str, Handler]] = {}
-        self.services: dict[int, Handler] = {0x3F: self._svc_alloc, 0x3E: lambda e: 0}
+        self.services: dict[int, Handler] = {0x3F: self._svc_alloc, 0x3E: lambda e: 0, 0x78: self._svc_memset}
         self.service_log: list[tuple[int, int]] = []
         self.stub_log: list[str] = []
         self.trace: list[int] = []
@@ -85,7 +84,8 @@ class FwEmu:
         uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, self._on_unmapped)
         if debug:
             uc.hook_add(UC_HOOK_CODE, self._on_trace)
-        self.gp_func(GATEWAY, "os_service", self._gateway)
+        for slot in self._gateway_slots():
+            self.gp_func(slot, "os_service", self._gateway)
 
     # -- initialised data ----------------------------------------------------------------------------------
     def _load_idata(self) -> None:
@@ -182,6 +182,22 @@ class FwEmu:
         self.service_log.append((sid, self.reg("a0")))
         return self.services.get(sid, lambda e: 0)(self)
 
+    def _gateway_slots(self) -> list[int]:
+        """The service trampolines end in `lw $at, slot($at)` / `ori $t0, $zero, id` / `jr $at` (the `$at` holds
+        `$gp`): every distinct `slot` is a gateway pointer."""
+        slots = set()
+        words = struct.unpack(f">{len(self.image) // 4}I", self.image[:len(self.image) // 4 * 4])
+        for i, w in enumerate(words[:-3]):
+            if w >> 16 == 0x8C21 and 0x00200008 in words[i + 1:i + 4]:        # lw $at, off($at) ... jr $at
+                off = w & 0xFFFF
+                slots.add(off - 0x10000 if off & 0x8000 else off)
+        return sorted(slots)
+
+    def _svc_memset(self, emu) -> int:
+        a0, a1, a2 = self.reg("a0"), self.reg("a1") & 0xFF, self.reg("a2")
+        self.write(a0, bytes([a1]) * a2)
+        return a0
+
     def _svc_alloc(self, emu) -> int:
         return self.alloc(self.reg("a0"))
 
@@ -247,3 +263,22 @@ class FwEmu:
         except UcError as e:
             raise FwFault(f"{e} at {uc.reg_read(M.UC_MIPS_REG_PC) - BASE:#x}", self.explain()) from e
         return self.reg("v0")
+
+    def run_at(self, start: int, stop: int, *, regs: dict[str, int] | None = None, frame: dict[int, int] | None = None,
+               sp: int | None = None, max_insn: int = 1_000_000) -> None:
+        """Run from module offset `start` to `stop` (mid-function): for the giant message handlers that cannot be called
+        as a whole. `frame` maps stack offsets to words, `regs` sets registers (`s0..s7`, `a0..a3`, ...)."""
+        sp = sp if sp is not None else STACK - 0x4000
+        for off, v in (frame or {}).items():
+            self.put32(sp + off, v)
+        self.set_reg("sp", sp)
+        self.set_reg("gp", self.gp)
+        self.set_reg("fp", BASE + FP_BIAS)
+        self.set_reg("ra", RET)
+        for k, v in (regs or {}).items():
+            self.set_reg(k, v)
+        self.unmapped.clear()
+        try:
+            self.uc.emu_start(BASE + start, BASE + stop, count=max_insn)
+        except UcError as e:
+            raise FwFault(f"{e} at {self.uc.reg_read(M.UC_MIPS_REG_PC) - BASE:#x}", self.explain()) from e

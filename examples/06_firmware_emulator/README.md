@@ -23,7 +23,8 @@ result holds for the function and its inputs, not for the unit as a whole.
 | `dbq` descriptor builder | `sub_00fc28`: S4 record + two nodes -> 52-byte descriptor | **executed** on 758 + 1,164 segments, 13 bytes agree with the doc; dependency map of every byte | `dbq.py` |
 | `rpmod` edge builder, layout 1 | `sub_01fd80`: S4 record + nodes -> planner edge | **executed**, dependency map | `rpmod_edge.py` |
 | `rpmod` edge builder, layout 2 | `sub_04e02c` | **executed**, dependency map | `rpmod_edge.py` |
-| `gd_bjl` junction passes | `sub_00e8d8`, `sub_00fbd4` (docs/fw/04 §13) | **not run yet**: the object layouts are known only from the listing (**read**) | - |
+| `gd_bjl` item creation | `sub_002238` `0x23f8`-`0x2838`: `dbq` descriptor -> item | **executed** on 549 + 959 descriptors, 17 item bytes agree; one reading corrected (item `+0x24`) | `gd_bjl.py`, `gd_bjl_items.py` |
+| `gd_bjl` junction passes | `sub_00e8d8`, `sub_00fbd4` (docs/fw/04 §13) | **not run yet**: the junction object and the item positions are known only from the listing (**read**) | - |
 | planner cost / `can_traverse` | `rpmod` `0x464a0`..., `004360` | not run | - |
 
 ## Files
