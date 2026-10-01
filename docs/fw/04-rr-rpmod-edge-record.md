@@ -362,3 +362,23 @@ builds its line with attribute `0x20` (prohib) when that chain's `ROAD_TYPE == 1
 connected id 1 (`1st`). `ROAD_TYPE` is set by guidance, not read
 from S4 here (not traced to a field). A post-pass (`0x1ac08`-`0x1ac4c`) rewrites elements of one index: attribute
 `9` -> `5` with connected id 2, and `0x18` -> `0x10` with connected id 1.
+
+### 11.1 Where `ROAD_TYPE` comes from (2026-10-01)
+
+Chain descriptors reach `vp_man` as pipe message type `0x0f` (`vp_man` `0x169f8`: allocates `0x1c`, appends the node to
+the last junction descriptor's list at `+0x10`; type `0x0d` carries `0x0c`-byte node-list items, type `0x0e` another
+`0x0c`-byte list). The sender is `gd_man` `sub_019108` (`0x19264`-`0x1928c`, `a0 = 0xf`, `a2 = 0x1c`). Its record is built at
+`sp+0x20`: `+4` PART_OF_JUNCT (`item+0x21`, cleared for the from / to chains), `+5` PLANNED (`item+0x10 >= 0`), `+6`
+**ROAD_TYPE** = `sub_0195bc(state, item)`, `+8` word from `sub_01969c`, `+0xc` / `+0xe` angles.
+
+`sub_0195bc` returns, in this order (item = the `gd_bjl` segment record):
+1. if `item+0x2a` is 2 or 3 and `sub_01969c(item)` is 0 -> 0;
+2. else if `item+0x21 != 0` and `sub_0194c8()` is not 1 -> 0; otherwise `item+0x2a`;
+3. then: if `item+0x22 == 2` and `item+0x20 == 2` -> **1**; if `item+0x5f == 7` it returns 0 / 1 depending on
+   two global pointers (`gp-0x6770`, `gp-0x6774`) compared with the item and with `state+0x1c`.
+
+So `ROAD_TYPE == 1` is **a segment whose `item+0x22` and `item+0x20` are both 2**. In the `gd_bjl` copy
+(section 9) `item+0x20` is the `dbq` descriptor byte `+0x1D` (not the S4 byte; unnamed, `sub_00fc28` writes it
+from the segment) and `item+0x22` is descriptor `+0x2B`; neither was traced to an S4 field. Hence what makes a
+side road "prohib" in the picture is **not decoded**; the S4 candidates are the segment's direction restriction
+(`+0x0B` bits 4-5, 2 = one-way against) or the car-access byte, but that is a guess. Open.
