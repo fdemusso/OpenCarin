@@ -512,3 +512,39 @@ is then incremented, so these two words **count the arms on side 1 and side 2**)
 `gp-0x52c8`), not to decide anything. What the per-arm table at `0x121d0` feeds, and the names of the roles, were not
 traced. Verdict: **hint** (structure read, no data to test it on: the role is computed by the firmware, not stored on
 the disc).
+
+### 13.2 The per-arm table at `0x121d0` (2026-10-01)
+
+The code `0x120c4`-`0x124d8` sits in the same large `gd_bjl` function that calls `sub_00e8d8` (`0x11b78`; the
+listing has no label for it). It is a **junction refinement pass** on a junction object (`s0`, descriptor at
+`obj+4`). The "table" is a stack frame at `sp+0x10`:
+
+| Frame field | Content |
+|---|---|
+| `+0` + 2 * i, `+1` + 2 * i | arm i (up to 4): arm type (`+0x10` of the arm's junction object), role (1 or 2, the `+0x33` of section 13.1) |
+| `+8` | number of arms taken |
+| `+0xc` | largest distance step between consecutive arms (difference of `+0x18` of the `+0x1c` object; a position along the route) |
+| `+0x10` | 1 if arms of both roles 1 and 2 were taken |
+
+Entry condition (`0x120c8`-`0x12108`): junction type (`obj+0x10`) == `0x13`, or `0x14` with `obj+0x40` == 3. Other
+types skip the pass with an empty table. An arm is taken when it has `+0x29` set and its side's arm count (`+0x58` /
+`+0x5c`) is 0, or 1 with `+0x32` equal to the role (`0x12110`-`0x12198`).
+
+With the table filled, a switch on `obj+0x40 - 3` (`0x12278`-`0x122a0`; only 3, 5, 0x11, 0x12 do anything) decides
+whether to rewrite the junction:
+
+| `obj+0x40` | Rewrite when |
+|---|---|
+| 3 | exactly 2 arms taken, their distance step >= 51 (`0x33`) and only one role present: `obj+0x10` := `0x13` |
+| 5 | 1 arm taken, or arms of both roles present while `s0+0x18` == 0 |
+| `0x11`, `0x12` | 1 arm taken and `obj+0x11` == 1 |
+
+On a rewrite with both roles present, the junction is collapsed: `obj+0x6c` := old type, `+0x6d` := 4, `+0x40` := 4,
+the `+0x20` segment's `+0x32` := 4, `+0x68` := 1. With one role, the table is copied into `obj+0x6c...` (count in
+`+0x68`) and the `+0x20` segment's `+0x32` := the role of the first arm. Then `sub_00c260`, `sub_00e710`,
+`sub_00e804` and `sub_00f0b4` re-run on it. Without a rewrite the old values are saved (`+0x6c`, `+0x6d`, `+0x68` := 1).
+
+So the table is the **list of the arms that survive as distinct branches of a junction of kind `0x13` / `0x14`**,
+with their side; the pass merges junctions whose arms collapse to one or two on a side. This is a reading of the
+control flow. Not traced: the meaning of junction types `0x13` / `0x14`, of `obj+0x40` (3, 4, 5, `0x11`, `0x12`), and
+the effect of `+0x6c` / `+0x6d` / `+0x68`. Verdict: **hint**; none of it is on the disc, so no data can test it.
