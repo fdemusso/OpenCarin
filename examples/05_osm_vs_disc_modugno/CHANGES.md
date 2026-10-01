@@ -45,6 +45,8 @@ The RR firmware (`bsw2`, `navboot`) was read with a disassembler to follow the u
 | chain `+0x0d` (not S4) | - | traversal direction | explained, not a disc field |
 
 Corrections to earlier statements of this log: the cost routine at `rpmod` `0x03cffc` does not use `+0x10` bit 7; the S4 byte `+0x1D` bit 7 / `+0x0A` bit 7 pair is the built-up flag only.
+Junction types 2, 5 and 6 label whole roundabouts (189 / 260 rings, none mixed; type 5 = ring length up to 66 m in 32 / 34 and 61 / 63 rings, type 6 above it in 141 / 145 and 182 / 186; type 2 unexplained, `docs/fw/04-rr-rpmod-edge-record.md` §13.3; hint).
+
 New from the same reading: junction type 2 (67 / 71 segments, 88-89% of the matched on `junction=roundabout`, same roads as type 6) is the one the picture code ties to `ROAD_TYPE` 1; node `+6` bits 0-2 = 2 is read by guidance (`gd_bjl`). Both are hints from firmware, not tested on a unit.
 Not followed: node `+6` bits 3-5 and the rest of the node flags (the nibble 4 / 2 question stays open), S10 flags 2 / 3, where guidance sets `ROAD_TYPE`, the BSI `uag` position fields.
 

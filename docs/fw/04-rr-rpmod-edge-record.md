@@ -579,6 +579,17 @@ Consequences:
   field** from this JD type; the match of numbers (6 = `BIF_SYM_2`) is a coincidence of two enums, not shown to be
   the same. Section 11's guess "2 = `SIMPLE_ROUNDABOUT`" stays unverified: the S4 type 2 and the JD type 2 are not
   proven to share a table, but the roundabout data (88-89% of S4 type 2 on `junction=roundabout`) fits it.
+- **The S4 segment junction types 2, 5, 6 are kinds of whole roundabouts** (data, `examples/05_osm_vs_disc_modugno`;
+  segments joined through shared nodes, rings of types 2 / 5 / 6 only): 189 rings on 21708 and 260 on 21734, **none
+  mixes types**. `gd_bjl` tests the segment type against 5, 6, 7 together (`0xb300`, `0xb480`, `0xb554`, `0xb718`) and 9
+  and 2 separately, i.e. it treats 5 / 6 as one family. Ring length (sum of segment lengths): type 5 is the small
+  one, 32 of 34 (21708) and 61 of 63 (21734) rings are at most 66 m (median 55 / 53 m); type 6 is larger, 141 of 145 and
+  182 of 186 rings are above 66 m (median 102 / 106 m); type 2 has 10 / 11 rings of 4-8 segments, median 173 / 169 m,
+  which overlaps type 6, and **what separates 2 from 6 is not found** (one segment per ring node, all nodes of degree
+  3-4, no `sub`, `+0x10` bit 7 or class difference). So 5 = small roundabout (about 20 m diameter or less), 6 = ordinary
+  roundabout, 2 = a third kind; a link to the JD names `ROUNDABOUT` / `SIMPLE_ROUNDABOUT` / `COMPLEX_ROUNDABOUT`
+  (types 1-3) is **not shown**: the segment enum has no value 1 on the discs. Verdict: 5 vs 6 by size = hint (n = 34 + 145,
+  63 + 186, 6 exceptions of 428); 2 = unknown.
 - It is not shown that the `gd_bjl` object `+0x10` and the pipe's JD `+4` are the same field; the values 6 / 7 and
   `0x13` / `0x14` agree with the name table (`OTHER` and `STYLIZED_DCW_JUNC...` are sensible for a refinement pass),
   which supports it.
