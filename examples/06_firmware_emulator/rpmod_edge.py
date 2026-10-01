@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import struct
 
-from fwemu import ROOT, FwEmu, FwFault
+from fwemu import ROOT, FwEmu, FwFault, position_stub
 
 FIRMWARE = ROOT / "build" / "fw" / "V_2_RR_0101_BMWC01S_app_sw_bsw2"
 GP_LAYOUT = -0x6064        # gp-relative pointer to the layout table (read at 0x1fe40)
@@ -26,12 +26,14 @@ class RpmodEdgeEmu(FwEmu):
         for i, v in (layout or {}).items():
             struct.pack_into(">H", buf, 0x1E + 2 * i, v)
         self.gp_word(GP_LAYOUT, self.place(bytes(buf)))
-        self.gp_func(GP_POSITION, "position")
+        self.gp_func(GP_POSITION, "position", position_stub)
         self.tile_addr = self.place(bytes(0x200000))
         self.edge_addr = self.place(bytes(EDGE_SIZE))
+        self.snapshot()
 
     def run_tile(self, tile: bytes, seg_off: int, **extra):
         """Returns (edge record bytes, ret) for the S4 record at `seg_off`."""
+        self.restore()
         self.write(self.tile_addr, tile)
         self.write(self.edge_addr, bytes(EDGE_SIZE))
         self.write(self.edge_addr + 8, struct.pack(">H", seg_off))

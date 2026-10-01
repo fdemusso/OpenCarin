@@ -21,6 +21,7 @@ from dbq import DbqEmu  # noqa: E402
 from gd_bjl import GdBjlEmu, ITEM_SIZE  # noqa: E402
 from gd_bjl_items import expected as item_expected  # noqa: E402
 from rpmod_edge import RpmodEdgeEmu  # noqa: E402
+from fwemu import FwFault  # noqa: E402
 from run_tile import expected as desc_expected, study_tiles  # noqa: E402
 
 
@@ -42,8 +43,24 @@ def main(argv: list[str]) -> int:
         d = cap[0] if cap else b""
         bad = [hex(k) for k, v in desc_expected(payload, off, T).items() if len(d) != 0x34 or d[k] != v]
         gd = GdBjlEmu()
-        item = gd.read(gd.create_item(d), ITEM_SIZE) if len(d) == 0x34 else b""
+        item = gd.read(gd.feed_segment(b"".join(cap)), ITEM_SIZE) if len(d) == 0x34 else b""
         bad += ["item" + hex(k) for k, v in item_expected(d).items() if not item or item[k] != v]
+        # the stream: names on, the module's own parser, the point list of the item against descriptor +0x2f
+        dbq.write(dbq.arg_addr, bytes(64))
+        dbq.write(dbq.arg_addr + 4, b"\0\1")
+        cap2, _ = dbq.run_tile(payload, off, tile_id)
+        dbq.write(dbq.arg_addr, bytes(64))
+        if cap2 and len(cap2[0]) == 0x34:
+            gd2 = GdBjlEmu()
+            try:
+                it2 = gd2.feed_segment(b"".join(cap2))
+                n, p = 0, gd2.u32(it2 + 0x34)
+                while p and n < 100:
+                    n, p = n + 1, gd2.u32(p)
+                if n != cap2[0][0x2F]:
+                    bad.append(f"stream points {n} != {cap2[0][0x2F]}")
+            except FwFault as e:
+                bad.append("stream " + e.args[0])
         a, _ = e1.run_tile(payload, off)
         b, _ = e2.run_tile(payload, off)
         # planner edges: class, form, toll, tunnel, category, UAG (layout 1 edge +0x1d set / layout 2 edge +0x1f clear)

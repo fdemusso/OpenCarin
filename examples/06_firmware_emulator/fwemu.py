@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Callable
 
 import capstone
-from unicorn import (UC_ARCH_MIPS, UC_HOOK_CODE, UC_HOOK_MEM_READ_UNMAPPED, UC_HOOK_MEM_WRITE_UNMAPPED,
+from unicorn import (UC_ARCH_MIPS, UC_HOOK_CODE, UC_HOOK_INTR, UC_PROT_EXEC, UC_PROT_READ, UC_HOOK_MEM_READ_UNMAPPED, UC_HOOK_MEM_WRITE_UNMAPPED,
                      UC_MODE_BIG_ENDIAN, UC_MODE_MIPS32, Uc, UcError)
 from unicorn import mips_const as M
 
@@ -44,6 +44,20 @@ NAMES = "zero at v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t6 t7 s0 s1 s2 s3 s4 s5 s6 
 Handler = Callable[["FwEmu"], "int | None"]
 
 
+VERTEX_SHIFT = 6           # local coordinate unit = 64 CARIN units (carin/parser/geometry.py)
+
+
+def position_stub(emu: "FwEmu") -> int:
+    """Stands for the library function behind `gp[-0x7ce4]` (called as `(origin, node record, out)`): `out = origin +
+    (u, v) << 6`. **Hypothesis**: the origin is at `tile + T[5] + T[0x11]` (checked against the parser's tile frame) and the
+    shift is the parser's `VERTEX_SHIFT`; the real function lives outside the module and is not available."""
+    a0, a1, a2 = emu.reg("a0"), emu.reg("a1"), emu.reg("a2")
+    x0, y0 = struct.unpack(">ii", emu.read(a0, 8))
+    u, v = struct.unpack(">HH", emu.read(a1, 4))
+    emu.write(a2, struct.pack(">ii", x0 + (u << VERTEX_SHIFT), y0 + (v << VERTEX_SHIFT)))
+    return 0
+
+
 def _align(n: int) -> int:
     return (n + PAGE - 1) // PAGE * PAGE
 
@@ -61,7 +75,9 @@ class FwEmu:
         self.uc = uc = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_BIG_ENDIAN)
         uc.mem_map(BASE, _align(len(self.image)) + PAGE)
         uc.mem_write(BASE, self.image)
+        uc.mem_protect(BASE, _align(len(self.image)) + PAGE, UC_PROT_READ | UC_PROT_EXEC)     # the code is read-only on the unit too
         uc.mem_map(DATA, data_size)
+        self._data_size = data_size
         uc.mem_map(STACK - 0x100000, 0x100000)
         uc.mem_map(STUBS, PAGE)
         uc.mem_map(USER, 0x1000000)
@@ -73,8 +89,9 @@ class FwEmu:
         self.heap = HEAP
         self.user = USER
         self.stubs: dict[int, tuple[str, Handler]] = {}
-        self.services: dict[int, Handler] = {0x3F: self._svc_alloc, 0x3E: lambda e: 0, 0x78: self._svc_memset}
-        self.service_log: list[tuple[int, int]] = []
+        self.services: dict[int, Handler] = {0x3F: self._svc_alloc, 0x3E: lambda e: 0, 0x78: self._svc_memset,
+                                         0x4A: self._svc_strcpy, 0x41: self._svc_memcpy}
+        self.service_log: list[tuple[int, int, int, int, int]] = []
         self.stub_log: list[str] = []
         self.trace: list[int] = []
         self.unmapped: list[tuple[str, int, int]] = []
@@ -82,6 +99,9 @@ class FwEmu:
         self._next_stub = STUBS
         self._mult3()
         uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, self._on_unmapped)
+        uc.hook_add(UC_HOOK_INTR, self._on_syscall)
+        self.syscalls: list[tuple[int, int, int, int]] = []
+        self.stub_notes: list[str] = []
         if debug:
             uc.hook_add(UC_HOOK_CODE, self._on_trace)
         for slot in self._gateway_slots():
@@ -113,6 +133,20 @@ class FwEmu:
             self.reloc_notes.append(f"list {kind}: {n} words")
             p += 2 * n
             kind += 1
+
+    def snapshot(self) -> None:
+        """Remember the module image and the data area (call after the target's setup)."""
+        self._snap = (self.read(BASE, len(self.image)), self.read(DATA, self._data_size))
+
+    def restore(self) -> None:
+        """Put the module image and the data area back: corrupt input (bit flips) can make the code write over itself, and
+        Unicorn then crashes in later runs."""
+        _, data = self._snap
+        self.write(DATA, data)
+        used = max(self.heap - HEAP, 0)
+        if used:
+            self.write(HEAP, bytes(used))            # the allocator hands out zeroed memory
+        self.write(STACK - 0x10000, bytes(0x10000))
 
     # -- registers and memory ------------------------------------------------------------------------------
     def reg(self, name: str) -> int:
@@ -170,16 +204,44 @@ class FwEmu:
         self.stubs[addr] = (name, handler)
         self.uc.hook_add(UC_HOOK_CODE, self._on_stub, begin=addr, end=addr)
 
+    def bind_unbound(self) -> list[int]:
+        """Give every still-empty gp function pointer a stub that returns 0 (and logs its name in `stub_log`). A slot is a
+        function pointer when the code loads it as `lw $r, slot($base)` and then `jalr $r` (no `jr`, so no trampolines);
+        the real functions come from libraries the loader binds at run time. Returns the slots bound. Call after the
+        specific stubs: **a 0 result is a guess**, the slot names tell what is missing."""
+        words = struct.unpack(f">{len(self.image) // 4}I", self.image[:len(self.image) // 4 * 4])
+        slots = set()
+        for i, w in enumerate(words):
+            if w & 0xFC1FFFFF == 0x0000F809 and (w >> 21) & 31 not in (0, 25):
+                rs = (w >> 21) & 31
+                for j in range(i - 1, max(i - 8, 0), -1):
+                    v = words[j]
+                    if v >> 26 == 0x23 and (v >> 16) & 31 == rs and (v >> 21) & 31 != 29:      # lw rs, off(base), base != sp
+                        off = v & 0xFFFF
+                        slots.add(off - 0x10000 if off & 0x8000 else off)
+                        break
+        bound = []
+        for slot in sorted(slots):
+            if not -0x8000 <= slot < 0 or self.u32(self.gp + slot) != 0:
+                continue
+            self.gp_func(slot, f"unbound{slot:+#x}")
+            bound.append(slot)
+        return bound
+
     def _on_stub(self, uc, addr, size, _):
         name, handler = self.stubs[addr]
         self.stub_log.append(name)
-        v = handler(self)
+        try:
+            v = handler(self)
+        except Exception as e:      # a stub touched memory it should not (corrupt input): note it, answer 0 and go on;
+            self.stub_notes.append(f"{name}: {e}")      # `emu_stop()` from a hook corrupts the next `emu_start`
+            v = 0
         uc.reg_write(M.UC_MIPS_REG_V0, (v or 0) & 0xFFFFFFFF)
         uc.reg_write(M.UC_MIPS_REG_PC, uc.reg_read(M.UC_MIPS_REG_RA))
 
     def _gateway(self, emu) -> int:
         sid = self.reg("t0")
-        self.service_log.append((sid, self.reg("a0")))
+        self.service_log.append((sid, self.reg("a0"), self.reg("a1"), self.reg("a2"), self.reg("a3")))
         return self.services.get(sid, lambda e: 0)(self)
 
     def _gateway_slots(self) -> list[int]:
@@ -192,6 +254,21 @@ class FwEmu:
                 off = w & 0xFFFF
                 slots.add(off - 0x10000 if off & 0x8000 else off)
         return sorted(slots)
+
+    def _svc_strcpy(self, emu) -> int:
+        """Service `0x4a` (**hypothesis** from its arguments: `(dst, NUL-terminated source)`, `dbq` copies a road name)."""
+        a0, a1 = self.reg("a0"), self.reg("a1")
+        n = 0
+        while self.read(a1 + n, 1) != b"\0" and n < 0x4B:        # the destination buffers seen are 0x4c bytes
+            n += 1
+        self.write(a0, self.read(a1, n) + b"\0")
+        return a0
+
+    def _svc_memcpy(self, emu) -> int:
+        """Service `0x41` (**hypothesis**: `(dst, src, length)`, `dbq` copies its 0x50-byte records into a list element)."""
+        a0, a1, a2 = self.reg("a0"), self.reg("a1"), self.reg("a2")
+        self.write(a0, self.read(a1, a2))
+        return a0
 
     def _svc_memset(self, emu) -> int:
         a0, a1, a2 = self.reg("a0"), self.reg("a1") & 0xFF, self.reg("a2")
@@ -226,6 +303,13 @@ class FwEmu:
         if len(self.trace) > 80:
             del self.trace[0]
 
+    def _on_syscall(self, uc, intno, _):
+        """OS-9 system calls (`syscall`) are not emulated: logged, `$v0` = 0 (no error) and execution goes on."""
+        pc = uc.reg_read(M.UC_MIPS_REG_PC)
+        self.syscalls.append((pc - BASE, self.reg("a0"), self.reg("a1"), self.reg("v0")))
+        uc.reg_write(M.UC_MIPS_REG_V0, 0)
+        uc.reg_write(M.UC_MIPS_REG_PC, pc + 4)
+
     def _on_unmapped(self, uc, access, addr, size, value, _):
         self.unmapped.append(("r" if access == 19 else "w", addr, uc.reg_read(M.UC_MIPS_REG_PC)))
         return False
@@ -258,6 +342,7 @@ class FwEmu:
         self.set_reg("ra", RET)
         self.unmapped.clear()
         self.heap_mark = self.heap
+        self.stub_notes.clear()
         try:
             uc.emu_start(BASE + offset, RET, count=max_insn)
         except UcError as e:
@@ -278,6 +363,7 @@ class FwEmu:
         for k, v in (regs or {}).items():
             self.set_reg(k, v)
         self.unmapped.clear()
+        self.stub_notes.clear()
         try:
             self.uc.emu_start(BASE + start, BASE + stop, count=max_insn)
         except UcError as e:

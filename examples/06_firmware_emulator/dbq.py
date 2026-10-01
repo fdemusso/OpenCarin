@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 
-from fwemu import ROOT, FwEmu, FwFault
+from fwemu import ROOT, FwEmu, FwFault, position_stub
 
 FIRMWARE = ROOT / "build" / "fw" / "V_2_RR_0101_BMWC01S_app_sw_bsw2"
 FUNC = 0xFC28              # sub_00fc28, the descriptor builder
@@ -25,14 +25,17 @@ class DbqEmu(FwEmu):
             struct.pack_into(">H", buf, 0x1E + 2 * i, v)               # L + 0x1e + 2 * id
         self.layout_addr = self.place(bytes(buf))
         self.gp_word(GP_LAYOUT, self.layout_addr)
-        self.gp_func(GP_SHAPE_DECODE, "shape_decode")                  # no-op: the shape is not decoded
+        self.gp_func(GP_SHAPE_DECODE, "position", position_stub)
         self.tile_addr = self.place(bytes(0x200000))
         self.ref_addr = self.place(bytes(16))
         self.arg_addr = self.place(bytes(64))
         self.stub(EMIT, self._emit)
         self.stub(GET_TILE, self._get_tile)
+        self.snapshot()
 
     def _emit(self, emu) -> int:
+        if len(self.captured) >= 400:           # corrupt input (flipped counts) makes the module emit without end: refuse, it stops
+            return 0
         self.captured.append(self.read(self.reg("a0"), self.reg("a1")))
         return 1
 
@@ -42,6 +45,7 @@ class DbqEmu(FwEmu):
 
     def run_tile(self, tile: bytes, seg_off: int, tile_id: int = 0, a2: int = 0, a3: int = 0, arg5: int = 0, arg6: int = 0):
         """Run `sub_00fc28` for the S4 record at byte offset `seg_off` of a decoded tile. Returns (captured, ret)."""
+        self.restore()
         self.write(self.tile_addr, tile)
         self.write(self.ref_addr, struct.pack(">IIH", tile_id, 0, seg_off) + b"\0\0")
         self.captured.clear()

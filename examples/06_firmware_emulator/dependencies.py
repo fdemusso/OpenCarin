@@ -25,6 +25,10 @@ from rpmod_edge import EDGE_SIZE, RpmodEdgeEmu  # noqa: E402
 from run_tile import study_tiles  # noqa: E402
 
 DESC = 0x34
+import faulthandler
+
+faulthandler.enable()
+TRACE = bool(__import__("os").environ.get("DEP_TRACE"))
 
 
 def make(target: str, T: dict, rel: int):
@@ -62,6 +66,8 @@ def main(argv: list[str]) -> None:
                 for bit in range(8):
                     buf = bytearray(payload)
                     buf[pos] ^= 1 << bit
+                    if TRACE:
+                        print("flip", tile_id, i, name, bit, file=sys.stderr, flush=True)
                     out, _ = run(bytes(buf), off, tile_id)
                     key = f"{name}.{bit}"
                     trials[key] += 1
