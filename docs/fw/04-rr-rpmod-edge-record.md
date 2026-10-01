@@ -14,8 +14,11 @@
 > | `+0x18 & 0x10` | **tunnel flag** (route chain `+0x1B`, `BSI_RS_TUNNEL_MASK` = 16) | 7 |
 > | `+0x1D` bits 4-6 | **3-bit category** read by the planner (`rpmod` second edge layout `+0x1E`, adds a cost for some pairs) and by guidance (`gd_bjl` `sub_00a810`, chains segments of one junction); value meanings not found | 8, 9 |
 > | chain `+0x0d` | traversal direction of the chain, not an S4 field | 8 |
+> | node `+6` `& 7 == 2` | **fork / merge node**: `gd_bjl` counts the arms within 60 degrees that touch it; 2 arms make a `BIF_SYM_2` junction, 3 a `BIF_SYM_3`. Data: 28 / 29 and 26 / 27 nodes have such arms against 18% of node value 0 | 12, 13 |
+> | node `+6` bits 5-4, bit 3 | bits 5-4 == 2 = planner's edge node; bit 3 never set, no reader | 12 |
+> | junction type names | the 22-entry `vp_man` table (`ROUNDABOUT` ... `RDAB_EXIT`), section 13.3 | 13.3 |
 >
-> Not done: node `+6` flags, the receiver of the `rpmod` chain record's UAG byte, who calls the leaf at
+> Not done: the receiver of the `rpmod` chain record's UAG byte, who calls the leaf at
 > `vp_man+0x13f8`, where guidance sets `ROAD_TYPE`. Corrections made on the way (section 8): `rpmod+0x3cffc`
 > does not use `+0x10` bit 7; (section 10): the `dbq` buffer is a pipe write; (section 11): the `0x10` / `0x20`
 > line attribute in `vp_man` depends on `ROAD_TYPE`, not on `FULLY_ATTRIB`.
@@ -490,7 +493,7 @@ against 18% of the value-0 nodes (mostly 3-arm junctions with no such pair). The
 road leaving a main road at a shallow angle) would also be what a human calls a junction with a slip road. Not
 checked: the other filters of `sub_00e8d8` (junction type, `item+0x22`), and the angle the firmware uses, which is a
 field of the segment record and not this bearing. The reading "node value 2 = fork / merge of near-parallel arms" is
-now **explained for the data side** (n = 29 / 27, 2 exceptions); the names of the junction kinds 6 and 7 stay unknown.
+now **explained for the data side** (n = 29 / 27, 2 exceptions); the kind names 6 and 7 are `BIF_SYM_2` and `BIF_SYM_3` (section 13.3).
 
 ### 13.1 Readers of `+0x33` (2026-10-01)
 
@@ -546,5 +549,36 @@ the `+0x20` segment's `+0x32` := 4, `+0x68` := 1. With one role, the table is co
 
 So the table is the **list of the arms that survive as distinct branches of a junction of kind `0x13` / `0x14`**,
 with their side; the pass merges junctions whose arms collapse to one or two on a side. This is a reading of the
-control flow. Not traced: the meaning of junction types `0x13` / `0x14`, of `obj+0x40` (3, 4, 5, `0x11`, `0x12`), and
+control flow. Junction types `0x13` / `0x14` are `OTHER` and `STYLIZED_DCW_JUNCTION` (section 13.3). Not traced: the meaning of `obj+0x40` (3, 4, 5, `0x11`, `0x12`) and
 the effect of `+0x6c` / `+0x6d` / `+0x68`. Verdict: **hint**; none of it is on the disc, so no data can test it.
+
+### 13.3 Names of the junction types (2026-10-01)
+
+`vp_man`'s junction dump decoder (`0x1db08`-`0x1dd60`, string `JD -> type: %s(%d)`) switches on `JD+4` minus 1 over 22
+cases (anything else prints `?????`). The names are strings of `navboot`; some are stored cut to 14-17 characters
+by the dump's copy of the table (`SIMPLE_ROUNDAB`), the full name is in the string pool.
+
+| Type | Name | Type | Name |
+|---|---|---|---|
+| 1 | `ROUNDABOUT` | 12 | `STF` |
+| 2 | `SIMPLE_ROUNDABOUT` | 13 | `SIMPLE_STF` |
+| 3 | `COMPLEX_ROUNDABOUT` | 14 | `COMPLEX_STF` |
+| 4 | `Y_JUNCTION` | 15 | `MOTORWAY_EXIT` |
+| 5 | `T_JUNCTION` | 16 | `OTHER_EXIT` |
+| **6** | **`BIF_SYM_2`** (bifurcation, symmetric, 2 arms) | 17 | `ARRIVAL_DESTINATION` |
+| **7** | **`BIF_SYM_3`** (3 arms) | 18 | `ARRIVAL_NEIGHBOURHOOD` |
+| 8 | `BIF_ASYM_L` | 19 (`0x13`) | `OTHER` |
+| 9 | `BIF_ASYM_R` | 20 (`0x14`) | `STYLIZED_DCW_JUNCTION` |
+| 10 | `SQUARE` | 21 | `NORMAL` |
+| 11 | `PARKING_PLACE` | 22 | `RDAB_EXIT` |
+
+Consequences:
+- The `gd_bjl` pass of section 13 turns a node-value-2 cluster of 2 arms into **`BIF_SYM_2`** and of 3 arms into
+  **`BIF_SYM_3`**. That confirms the "fork / merge" reading independently of the data check.
+- The segment-level junction type of the S4 record (`+0x11 & 0x0F`, 2 = rare, 6 = common) is a **different
+  field** from this JD type; the match of numbers (6 = `BIF_SYM_2`) is a coincidence of two enums, not shown to be
+  the same. Section 11's guess "2 = `SIMPLE_ROUNDABOUT`" stays unverified: the S4 type 2 and the JD type 2 are not
+  proven to share a table, but the roundabout data (88-89% of S4 type 2 on `junction=roundabout`) fits it.
+- It is not shown that the `gd_bjl` object `+0x10` and the pipe's JD `+4` are the same field; the values 6 / 7 and
+  `0x13` / `0x14` agree with the name table (`OTHER` and `STYLIZED_DCW_JUNCTION` are sensible for a refinement pass),
+  which supports it.
