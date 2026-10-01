@@ -155,3 +155,27 @@ descriptor bytes `+0x28`, `+0x29` and `+0x2C` through one base register (two-byt
 of 120 lines). The reply is probably unpacked byte by byte (`dbq` has an unrolled 100-byte
 serialiser at `0x4140`) or passed to a module not in this container. **Open: the receiver of the
 descriptor, and so the use of `+0x1D` bits 4–6.**
+
+### 6.1 Receiver search and a string lead (2026-10-01)
+
+Listings of every module of the `bsw2` container (`hdlbsi`, `update_carloc`, `dbpa`, `dbc`,
+`db_con`, `dbd`, `gd_man`, `gd_bjl`, `mm`, `hdltmc`, `taxi`, `tpd`) and of `mm_sig` / `rs_dump`
+were searched for readers of the descriptor bytes (`+0x24`…`+0x2C`, in several byte combinations,
+windows of 30 to 120 lines). The only match is the inline 100-byte struct copy at `dbq+0x411c`
+(a plain `lb` / `sb` copy, no field access). The receiver is **not found**; the descriptor is
+probably handled as an opaque block or read through offsets that differ from `dbq`'s.
+
+What the firmware strings say (all outside the data path, so a lead, not a result):
+- **UAG = "unattributed geometry".** `rs_dump -u` prints "unattributed geometry flag"; `nav_tst`
+  and `bsitst` print `uag = POS_UAG / POS_NOT_UAG`, `digitization = PARTLY_DIGIT._AREA /
+  FULLY_DIGIT._AREA`, `curr_junction_in_uag`, `next_junction_in_uag`; `navboot` has
+  `GUIDANCE_UAG_SPLIT_SCREEN`; `gd_tool` has "Toggle RDA in partly digitized area". This fits
+  `+0x10` bit 7 as a placeholder class (the data side: class 6 / subtype 1 for the whole
+  minor network of Slovenia on 21708, `examples/05_osm_vs_disc_modugno/CHANGES.md`), but no code
+  path from the bit to a UAG flag was seen. Not verified.
+- **Restricted Access Area Guiding (RAAG).** `gsw_tools` and `bsw_tools` carry "Entering a
+  vehicle prohibited road", "Vehicle prohibited road ahead", "the destination is in a vehicle
+  prohibited area" and the `RESTRICTED_OPA` route criterion. This fits the car-access rule of
+  `+0x1B` (junction 3 / 4 closed unless the high nibble is 4, §2) and the data-side hint that
+  junction 3 is pedestrian areas. Not verified either.
+- No string names `+0x1D` bits 4–6.
