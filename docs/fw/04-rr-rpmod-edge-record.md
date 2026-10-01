@@ -88,5 +88,70 @@ it is not on `NAV_SW(v32).iso`.
    by either unpacker; look for readers of `+0x0A & 0x1F`).
 3. Callers of `sub_01fd80` / `sub_04e02c`: which structure lists edges, and how the S6 twin and
    S8 level links are followed (tile crossing and level switching).
-4. Meaning of `+0x10` bit 7, `+0x1D` bits 4–6, `+0x18 & 0x10` and node `+6`.
+4. Meaning of `+0x10` bit 7, `+0x1D` bits 4–6, `+0x18 & 0x10` and node `+6`. First trace of
+   the readers in §5: `rpmod` only carries the first and third on; the second is not read there.
 5. The `gp[-0x7A30]` per-block-type table (initialised data of `rpmod`).
+
+## 5. Where the unexplained edge bits go (2026-10-01)
+
+Read from `build/rr_rpmod.asm`; the functions `0x1d2e8`, `0x1fd80`, `0x7c2fc` were also defined in
+Ghidra (its decompiler fails on this MIPS image, so the listing is the source).
+
+`sub_01fd80` has two callers, both route builders: `0x1d4d4` (in `sub_01d2e8`) and `0x1dfe8`. Each
+puts the edge on the stack and calls the packer `0x1d914`, which squeezes it into a compact record
+(bytes `0xc`–`0x10`, plus byte `0x3e` = junction type):
+
+| Edge field (`sub_01fd80`) | S4 source | Packed bit |
+|---|---|---|
+| `+0x1D` | `+0x10` bit 7 | byte `0xc` bit 4 |
+| `+0x1F` | `+0x18 & 0x10` | byte `0xf` bit 7 |
+| `+0x1E` | toll | byte `0xf` bit 6 |
+| `+0x17` | slip role | byte `0xc` bits 0–2 |
+| `+0x20` | `+0x1D` bits 4–6 | **not packed** |
+
+The route builders then use only byte `0xc` `& 7`, parts of byte `0xe` and byte `0xf` bit 1 (they
+pass them to `sub_07c2fc`, which is a small `gp`-table lookup, not a cost function). The two bits
+in question are only **copied through**:
+
+- `sub_01dc7c` unpacks the record into a 6-byte attribute struct: `[0]` = `0xf` bit 4, `[1]` = bit 6
+  (toll), `[2]` / `[3]` = `0xe` bits 0 / 1 (form 14 / 15), `[4]` = `0xf` bit 7 (**`+0x18 & 0x10`**),
+  `[5]` = bit 5.
+- `0x15758` and `0x17b50` copy `0xc` bit 4 (**`+0x10` bit 7**) to byte `+0x14` of an exported edge
+  struct, next to `+0x12` / `+0x13` / `+0x15`–`+0x19` flags.
+
+So in `rpmod` neither bit steers the route cost or a branch. They are data for another module.
+**Edge `+0x20` (`+0x1D` bits 4–6) is read by none of these routines.** Still open: the consumer of
+the exported struct (`dbq`, `pbp` or the callers of `sub_011af4` / `sub_011b34`).
+
+## 6. `dbq` builds a 52-byte segment descriptor (2026-10-01)
+
+RR `0101` has no `pbp` module (that name is CC-93 only). Listings of `dbq`, `dbpa`, `mm`, `gd_man`
+and `update_carloc` were made with `scripts/firmware/mips_listing.py`; the raw S4 byte `+0x10` is
+read in `dbq` and `dbpa` only.
+
+`dbq` `sub_00fc28` reads the S4 record `s0` directly (not through `rpmod`) and fills a 52-byte
+(`0x34`) descriptor at `sp+0x108`, then appends it to a reply buffer with `sub_003b38` (copy into a
+`0x400`-byte buffer, flush with `sub_003248`). Tail fields are read from the u16 at
+`S4 + T[0x09] + 2`, i.e. bytes `+0x1C` (high) / `+0x1D` (low):
+
+| Descriptor byte | Source | Meaning in §6.7 |
+|---|---|---|
+| `+0x24` | u16 `& 0x0700 >> 8` | `+0x1C` bits 0–2 |
+| `+0x25` | u16 `& 0x7000 >> 12` | `+0x1C` bits 4–6 |
+| `+0x26` | `+0x10 & 0x70 >> 4` | class 6 subtype |
+| `+0x27` | `+0x0A & 0x7f` (after a DB-REL test, `sub_04ece8`) | speed category |
+| `+0x28` | `+0x0A & 0x80` (DB-REL ≥ 21) else `+0x1D & 0x80`, `>> 4` | built-up |
+| `+0x29` | u16 `& 0x70 >> 4` | **`+0x1D` bits 4–6, copied raw** |
+| `+0x2A` | 1 if u16 `& 0x8000` is 0 | `+0x1C` bit 7 inverted |
+| `+0x2C` | 0 if `+0x10 & 0x80`, else 1 | **`+0x10` bit 7 inverted** |
+
+So `dbq`, the server, also only repackages the bits; **it is the first place that reads `+0x1D`
+bits 4–6** (as a 3-bit number, no test on it). `+0x10` bit 7 is exported as "not set" (`+0x2C`),
+which fits a "has a functional class" reading better than a placeholder reading would: a
+descriptor with `+0x2C` = 0 is a segment whose class came from the placeholder.
+
+Searched for the clients: no function in `mm`, `gd_man`, `dbpa`, `update_carloc` or `rpmod` reads
+descriptor bytes `+0x28`, `+0x29` and `+0x2C` through one base register (two-byte search, window
+of 120 lines). The reply is probably unpacked byte by byte (`dbq` has an unrolled 100-byte
+serialiser at `0x4140`) or passed to a module not in this container. **Open: the receiver of the
+descriptor, and so the use of `+0x1D` bits 4–6.**
