@@ -471,5 +471,23 @@ So the node value 2 marks a node **where two or three roughly parallel segments 
 current one) meet**, and the guidance turns that into a junction of kind 6 or 7 with an ordering (`+0x33`) of its
 arms. Reading: a fork / merge node (carriageway split, slip-road branch), which agrees with the data hint (slip-road
 and main-road junctions). **Hint, not explained**: the kind names of 6 and 7 were not decoded (the `vp_man` dump
-prints the number), the readers of `+0x33` were not traced, and the data sample (30 / 28 nodes) was not
-re-checked against "two or three segments within 60 degrees".
+prints the number) and the readers of `+0x33` were not traced.
+
+Data check (`examples/05_osm_vs_disc_modugno`, nodes with `& 7 == 2` or 0 in the study boxes, sections 5 and 6;
+arm bearing = first segment shape step out of the node, so approximate; "cluster" = most arms within 60 degrees of
+one arm, itself included):
+
+| Disc | Node value | n | cluster >= 2 | cluster 2 | cluster 3 |
+|---|---|---|---|---|---|
+| 21708 | 2 | 29 | **28** | 21 | 7 |
+| 21708 | 0 | 18,645 | 3,394 (18%) | | |
+| 21734 | 2 | 27 | **26** | 18 | 8 |
+| 21734 | 0 | 21,515 | 3,788 (18%) | | |
+
+97% (28 / 29, 26 / 27) of the node-2 nodes have two or three arms that leave within 60 degrees of each other,
+against 18% of the value-0 nodes (mostly 3-arm junctions with no such pair). The one exception on each disc is a
+3-arm node without a pair. This fits the firmware reading; it does not prove it, because the same geometry (a slip
+road leaving a main road at a shallow angle) would also be what a human calls a junction with a slip road. Not
+checked: the other filters of `sub_00e8d8` (junction type, `item+0x22`), and the angle the firmware uses, which is a
+field of the segment record and not this bearing. The reading "node value 2 = fork / merge of near-parallel arms" is
+now **explained for the data side** (n = 29 / 27, 2 exceptions); the names of the junction kinds 6 and 7 stay unknown.
