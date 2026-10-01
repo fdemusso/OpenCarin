@@ -34,6 +34,8 @@ result holds for the function and its inputs, not for the unit as a whole.
 | `fwemu.py` | the generic harness (any RR module): image, `$fp` / `$gp`, initialised data and relocations, stubs, OS-service gateway, 3-operand multiply, `explain()` after a fault |
 | `dbq.py`, `rpmod_edge.py` | one class per target: layout table, tile, stubs, `run_tile()` |
 | `run_tile.py` | `dbq` on every segment of real tiles, compared with the field map of `fw/04` §6 |
+| `selftest.py` | every executed claim above on 80 segments in about a second; exit status 1 on a mismatch |
+| `gd_bjl.py`, `gd_bjl_items.py` | `gd_bjl` context (item pool, service gateway) and the item creation checked against the descriptor |
 | `dependencies.py` | flips every bit of the S4 record and of both node records and records which output bytes change; targets `dbq`, `rpmod`, `rpmod2` |
 | `dependencies_<target>_<disc>.txt`, `agreement_dbq_21734.txt` | the outputs |
 
