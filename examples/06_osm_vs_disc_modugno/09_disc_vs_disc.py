@@ -6,7 +6,7 @@ record the script reports how often it differs on pairs of unchanged geometry (s
 most frequent transitions. A field that never changes where the road did not is derived from stable
 properties; one that changes with the data is derived from source attributes that changed.
 
-    uv run python examples/05_osm_vs_disc_modugno/09_disc_vs_disc.py [--area A ...]
+    uv run python examples/06_osm_vs_disc_modugno/09_disc_vs_disc.py [--area A ...]
 """
 from __future__ import annotations
 

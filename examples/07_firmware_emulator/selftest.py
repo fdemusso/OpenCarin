@@ -1,6 +1,6 @@
 """Quick regression of the emulator: every executed claim of the README on a few segments (about 10 s).
 
-    uv run --with capstone --with unicorn python examples/06_firmware_emulator/selftest.py [disc]
+    uv run --with capstone --with unicorn python examples/07_firmware_emulator/selftest.py [disc]
 
 Needs `dataset/NAV_DB_<disc>.ISO` and the extracted firmware in `build/fw/`. Exit status 1 on any mismatch.
 """

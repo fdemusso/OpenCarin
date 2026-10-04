@@ -7,7 +7,7 @@ For each snapshot (OSM today, OSM 2015-07-21) and disc:
      turn restrictions (`type=restriction` relations) whose `from` or `to` way is the matched way.
   C. what the disc says on itself: owners' form, class, dead ends, entry patterns on both discs.
 
-    uv run python examples/05_osm_vs_disc_modugno/04_form7_s10.py [--disc 21708] [--snapshot now 2015] [--areas ...]
+    uv run python examples/06_osm_vs_disc_modugno/04_form7_s10.py [--disc 21708] [--snapshot now 2015] [--areas ...]
 """
 from __future__ import annotations
 

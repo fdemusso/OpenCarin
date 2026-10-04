@@ -5,7 +5,7 @@ the junction is assembled as in `gd_bjl_junction.py`: the list holds the whole r
 to = a ring segment at the node, and `sub_004090` is run (the ring has to close for `sub_00b440` to see a roundabout).
 Output: per ring segment type, how often each junction type comes out (names: docs/fw/04 §13.3).
 
-    uv run --with capstone --with unicorn python examples/06_firmware_emulator/gd_bjl_ring.py [disc]
+    uv run --with capstone --with unicorn python examples/07_firmware_emulator/gd_bjl_ring.py [disc]
 """
 
 from __future__ import annotations

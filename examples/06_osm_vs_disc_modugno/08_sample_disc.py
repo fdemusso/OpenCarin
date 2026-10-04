@@ -6,7 +6,7 @@ the unexplained bytes over them and writes the segments that carry a rare value 
 nibble != 2, `+0x18` = 0x10, `+0x10` bit 7, `+0x1D` bits 4-6, `+0x1C` other than 0x10/0x16/0x18)
 with the tile's centre, so the place can be looked up and, if useful, fetched from OSM.
 
-    uv run --with numpy python examples/05_osm_vs_disc_modugno/08_sample_disc.py [--disc 21708] [--n 400] [--seed 1] [--force]
+    uv run --with numpy python examples/06_osm_vs_disc_modugno/08_sample_disc.py [--disc 21708] [--n 400] [--seed 1] [--force]
 
 Writes dataset/sample_<disc>_<n>_segments.csv.gz (every sampled segment, compact) and sample_<disc>_<n>_rare.csv.gz.
 """

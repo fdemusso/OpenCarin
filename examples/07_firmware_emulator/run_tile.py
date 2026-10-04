@@ -1,6 +1,6 @@
 """Run the `dbq` descriptor builder on every segment of real tiles and compare it with the field map of docs/fw/04 §6.
 
-    uv run --with capstone --with unicorn python examples/06_firmware_emulator/run_tile.py [disc] [tile ...]
+    uv run --with capstone --with unicorn python examples/07_firmware_emulator/run_tile.py [disc] [tile ...]
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def study_tiles(disc: str, n: int) -> list[int]:
     """The first `n` tiles of the Bari-Modugno study area of examples/05 (needs its dataset)."""
     import csv
     import gzip
-    path = ROOT / "examples" / "05_osm_vs_disc_modugno" / "dataset" / f"disc_{disc}_bari_modugno_segments.csv.gz"
+    path = ROOT / "examples" / "06_osm_vs_disc_modugno" / "dataset" / f"disc_{disc}_bari_modugno_segments.csv.gz"
     seen: list[int] = []
     for r in csv.DictReader(gzip.open(path, "rt")):
         t = int(r["tile"], 0)

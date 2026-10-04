@@ -9,7 +9,7 @@ Tests, on the disc alone (the tables of step 1) and on the OSM node degree where
   4. bits 13 / 12 against the node section (S5 / S6) and the level.
   5. The same on the second disc.
 
-    uv run python examples/05_osm_vs_disc_modugno/05_nodes.py [--disc 21708]
+    uv run python examples/06_osm_vs_disc_modugno/05_nodes.py [--disc 21708]
 """
 from __future__ import annotations
 

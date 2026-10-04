@@ -47,8 +47,8 @@ result holds for the function and its inputs, not for the unit as a whole.
 | `dependencies_<target>_<disc>.txt`, `agreement_dbq.txt`, `agreement_gd_bjl_items.txt` | the outputs |
 
 ```
-uv run --with capstone --with unicorn python examples/06_firmware_emulator/run_tile.py 21708
-uv run --with capstone --with unicorn python examples/06_firmware_emulator/dependencies.py 21708 40 rpmod2
+uv run --with capstone --with unicorn python examples/07_firmware_emulator/run_tile.py 21708
+uv run --with capstone --with unicorn python examples/07_firmware_emulator/dependencies.py 21708 40 rpmod2
 ```
 
 ## Is it feasible? Yes, for a function like this
@@ -130,7 +130,7 @@ An S4 bit that moves no descriptor byte is not exported by this function (the sa
 | `+0x0B` bits 6-7 | toll (bit 6), one more bit | **no** |
 | `+0x18` bits 2-7 | includes the tunnel flag (`0x10`) | **no** (only bits 0-1, the slip role) |
 | `+0x1C` bit 3 | bridge (data: 80% of OSM bridges) | **no** |
-| `+0x1D` bit 0 | has house numbers (data, `examples/05_osm_vs_disc_modugno`) | **no** |
+| `+0x1D` bit 0 | has house numbers (data, `examples/06_osm_vs_disc_modugno`) | **no** |
 | `+0x1D` bit 7 | built-up (same as `+0x0A` bit 7) | only for DB-REL < 21 |
 
 So the guidance (`gd_bjl`) never sees toll, tunnel or bridge from `dbq`: those reach the route planner through `rpmod`

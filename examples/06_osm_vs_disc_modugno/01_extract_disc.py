@@ -4,7 +4,7 @@ The disc image is only read (`CarinVolume(IsoImage(path))`), never copied. The t
 area bounding box are found with the spatial index and parsed with `carin.parser.cf1.tile00.Tile00`;
 every field of the 32-byte segment record is kept, so later steps can tabulate any byte.
 
-    uv run --with numpy python examples/05_osm_vs_disc_modugno/01_extract_disc.py [--disc 21708 21734] [--area A ...] [--force]
+    uv run --with numpy python examples/06_osm_vs_disc_modugno/01_extract_disc.py [--disc 21708 21734] [--area A ...] [--force]
 
 Writes (dataset/, gzip CSV):
   disc_<disc>_<area>_segments.csv.gz  one row per segment: raw record (hex), decoded fields, node ids, flags, degrees, WKT

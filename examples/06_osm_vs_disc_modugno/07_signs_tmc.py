@@ -6,7 +6,7 @@
      location codes along a road.
   3. both on the second disc.
 
-    uv run python examples/05_osm_vs_disc_modugno/07_signs_tmc.py [--disc 21708] [--snapshot now]
+    uv run python examples/06_osm_vs_disc_modugno/07_signs_tmc.py [--disc 21708] [--snapshot now]
 """
 from __future__ import annotations
 

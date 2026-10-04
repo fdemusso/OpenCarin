@@ -119,7 +119,7 @@ Every block is readable except one group:
    level switching via S8.
 8. **Unknown fields the firmware reads**: `+0x10` bit 7 (**UAG, unattributed geometry**, 2026-10-01: firmware `rs_dump -u` + data placeholder class), `+0x18 & 0x10`
    (**tunnel flag**, chain record `+0x1B`, `fw/04` §7), `+0x1D` bits 4–6 (3-bit category: groups the segments of one complex junction in guidance, `gd_bjl` `sub_00a810`; also used by `rpmod` costs; `fw/04` §8–9), node `+6` flags (`fw/04` §12: bits 5-4 == 2 = edge node, `& 7` 4 and 5 alike, `& 7 == 2` = fork / merge node, `BIF_SYM_2` / `BIF_SYM_3` in guidance (§13), bit 3 unused; why some S6 nodes have bit 12 is open),
-   S10 flags 2/3 (data: not dead ends, not restrictions; see `examples/05_osm_vs_disc_modugno/CHANGES.md`); `examples/06_firmware_emulator` runs the `dbq` descriptor builder in an emulator and maps every descriptor byte to its S4 input bits (`fw/04` §14; the `dbq` stream, `gd_bjl` items and junction passes, `fw/04` §17), the per-block-type table `gp[-0x7A30]`.
+   S10 flags 2/3 (data: not dead ends, not restrictions; see `examples/06_osm_vs_disc_modugno/CHANGES.md`); `examples/07_firmware_emulator` runs the `dbq` descriptor builder in an emulator and maps every descriptor byte to its S4 input bits (`fw/04` §14; the `dbq` stream, `gd_bjl` items and junction passes, `fw/04` §17), the per-block-type table `gp[-0x7A30]`.
 9. **Issue #6**: where `subrel` (LAYOUT `+2`) comes from; trace the RR `db_pub` setup.
 10. **RR vs Mk3 `db_pub`**: diff the CF=1 decoders (the listings in `docs/fw/` are Mk3).
     Done for `0x00` (§9.11.12) and `0x14`–`0x1E` (§9.11.11); `0x0E` and `0x29` remain.
@@ -137,7 +137,7 @@ Every block is readable except one group:
 
 ### D0. Which value to write for an OSM way (study of 2026-10-01)
 
-`examples/05_osm_vs_disc_modugno/CHANGES.md` compares both DVDs with today's OSM, field by field. Known now: `+0x1D` bit 0 = has house numbers;
+`examples/06_osm_vs_disc_modugno/CHANGES.md` compares both DVDs with today's OSM, field by field. Known now: `+0x1D` bit 0 = has house numbers;
 speed category = default per (class, form, built-up), not `maxspeed`; node flags follow degree, level and section; S10 flag 0 / 1 entries match OSM
 restrictions; `+0x1C` 0x18 = bridge, S7 flag 2 with it. `+0x10` bit 7 = not fully attributed / UAG (write 0; firmware `FULLY_ATTRIB`, `fw/04` §10), `+0x18 & 0x10` = tunnel flag (`fw/04` §7). Hints: `+0x1D` bits 4-6 = category chaining the segments of one junction (write 0), `+0x18` = 4 (unpaved track), junction 3
 (pedestrian areas), signposts on ramps from `destination`. Not known: form 7 (write 11 / 12), S10 flags 2 / 3, the values of the `+0x1D` bits 4–6 category, node nibble 4 and 2,

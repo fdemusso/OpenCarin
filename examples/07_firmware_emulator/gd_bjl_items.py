@@ -1,7 +1,7 @@
 """`gd_bjl` item creation (`sub_002238` `0x23f8`..`0x2838`) on real `dbq` streams (descriptor and points): compare the item with the field map
 read from the listing (`docs/fw/04` §9, §13). The descriptors come from the `dbq` emulator, the tile from the disc.
 
-    uv run --with capstone --with unicorn python examples/06_firmware_emulator/gd_bjl_items.py [disc]
+    uv run --with capstone --with unicorn python examples/07_firmware_emulator/gd_bjl_items.py [disc]
 """
 
 from __future__ import annotations

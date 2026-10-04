@@ -6,7 +6,7 @@
   C. S7 shape-point flag byte (+4: 0, 1, 2) against bridge / tunnel in the matched OSM way and `+0x1C` (8).
   D. tile header words that vary and the counts they might equal (8).
 
-    uv run python examples/05_osm_vs_disc_modugno/10_bytes.py [--disc 21708] [--snapshot now]
+    uv run python examples/06_osm_vs_disc_modugno/10_bytes.py [--disc 21708] [--snapshot now]
 """
 from __future__ import annotations
 

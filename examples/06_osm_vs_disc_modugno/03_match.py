@@ -12,7 +12,7 @@ those, prefers a way with the same folded name. The way chosen by most samples i
   n_ways     number of different ways chosen by at least 2 samples (a disc segment spanning an OSM split)
   osm_*      the matched way's id, tags (JSON) and node count
 
-    uv run python examples/05_osm_vs_disc_modugno/03_match.py [--disc 21708] [--snapshot now 2015] [--area A ...] [--force]
+    uv run python examples/06_osm_vs_disc_modugno/03_match.py [--disc 21708] [--snapshot now 2015] [--area A ...] [--force]
 """
 from __future__ import annotations
 

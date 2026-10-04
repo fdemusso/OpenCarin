@@ -4,7 +4,7 @@ Overpass `out geom tags` (geometry, node ids and tags of every highway way) plus
 relations (members and tags), one request per (area, snapshot), kept on disk as gzip JSON so the
 later steps need no network. The 2015 snapshot uses the attic: `[date:"2015-07-21T00:00:00Z"]`.
 
-    uv run python examples/05_osm_vs_disc_modugno/02_fetch_osm.py [--area A ...] [--snapshot now 2015] [--force]
+    uv run python examples/06_osm_vs_disc_modugno/02_fetch_osm.py [--area A ...] [--snapshot now 2015] [--force]
 
 overpass-api.de is often busy ("Dispatcher_Client", "runtime error", HTTP 429/504): every request
 is retried with a pause and on the mirrors. A file that exists is not fetched again.

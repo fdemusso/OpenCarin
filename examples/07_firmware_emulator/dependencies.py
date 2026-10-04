@@ -2,7 +2,7 @@
 function again and record which output bytes change. The emulator is the oracle: a byte that no flip moves does not
 depend on the record (it comes from the arguments or from the shape).
 
-    uv run --with capstone --with unicorn python examples/06_firmware_emulator/dependencies.py [disc] [n_segments] [target]
+    uv run --with capstone --with unicorn python examples/07_firmware_emulator/dependencies.py [disc] [n_segments] [target]
 
 `target`: `dbq` (descriptor of `sub_00fc28`, default), `rpmod` (edge record of `sub_01fd80`), `rpmod2` (`sub_04e02c`).
 """

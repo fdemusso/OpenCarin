@@ -6,7 +6,7 @@ linked into a hand-built junction object `J`:  `+0x10` type (`-1`), `+0x0c` poin
 fields are **read** from the listing (docs/fw/04 §13, §16); the route state that builds `J` in the real handler is not run.
 `gp[-0x7df8]` (point equality) is a stub (**hypothesis**: exact equality).
 
-    uv run --with capstone --with unicorn python examples/06_firmware_emulator/gd_bjl_junction.py [disc] [side_sign] [n_zero] [junction|main]
+    uv run --with capstone --with unicorn python examples/07_firmware_emulator/gd_bjl_junction.py [disc] [side_sign] [n_zero] [junction|main]
 """
 
 from __future__ import annotations

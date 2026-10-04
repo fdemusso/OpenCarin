@@ -33,15 +33,15 @@ country) and six one-tile areas `x_*` elsewhere in Europe, each chosen because t
 value there (junction 3 and 4, `+0x10` bit 7, `+0x1D` bits 4-6).
 
 ```bash
-uv run --with numpy python examples/05_osm_vs_disc_modugno/00_setup.py            # checks, then steps 1 and 2
-uv run python examples/05_osm_vs_disc_modugno/03_match.py
-uv run python examples/05_osm_vs_disc_modugno/04_form7_s10.py                     # | tee dataset/report_04.txt
-uv run python examples/05_osm_vs_disc_modugno/05_nodes.py
-uv run python examples/05_osm_vs_disc_modugno/06_speed.py
-uv run python examples/05_osm_vs_disc_modugno/07_signs_tmc.py
-uv run --with numpy python examples/05_osm_vs_disc_modugno/08_sample_disc.py --n 400   # about a minute
-uv run python examples/05_osm_vs_disc_modugno/09_disc_vs_disc.py
-uv run python examples/05_osm_vs_disc_modugno/10_bytes.py
+uv run --with numpy python examples/06_osm_vs_disc_modugno/00_setup.py            # checks, then steps 1 and 2
+uv run python examples/06_osm_vs_disc_modugno/03_match.py
+uv run python examples/06_osm_vs_disc_modugno/04_form7_s10.py                     # | tee dataset/report_04.txt
+uv run python examples/06_osm_vs_disc_modugno/05_nodes.py
+uv run python examples/06_osm_vs_disc_modugno/06_speed.py
+uv run python examples/06_osm_vs_disc_modugno/07_signs_tmc.py
+uv run --with numpy python examples/06_osm_vs_disc_modugno/08_sample_disc.py --n 400   # about a minute
+uv run python examples/06_osm_vs_disc_modugno/09_disc_vs_disc.py
+uv run python examples/06_osm_vs_disc_modugno/10_bytes.py
 ```
 
 A rerun takes seconds (disc extraction: about 5 s per area; matching: seconds to a minute; the analyses:

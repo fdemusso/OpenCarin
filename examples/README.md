@@ -17,10 +17,10 @@ Looks up a street address (country, city, street, number) through the disc's own
 ### `04_update_modugno_roundabout`
 Updates a piece of the map from OpenStreetMap on a copy of the disc: a roundabout built at Modugno after the 2016 data replaces the old crossing in a street-level tile and its coarse tile, with every reference into them rewritten (delta against OSM, tile editor, validation, read back with the Python and the Rust decoder). Every change is logged in `CHANGES.md`; not run on a unit (`HARDWARE_TEST.md`).
 
-### `05_osm_vs_disc_modugno`
+### `06_osm_vs_disc_modugno`
 A read-only data study: compares both DVDs (21708, 21734) with OpenStreetMap, field by field, to say which unexplained fields of the street-tile segment record are explained, which are hints and what is unknown (`+0x1D` bit 0 = has house numbers, form of way 7, `+0x10` bit 7, speed category, node flags, S10 flags 2/3, signposts). Nothing is written to a disc; `dataset/` is small, ignored and regenerable. Verdicts per field in `CHANGES.md`; not run on a unit.
 
-### `06_firmware_emulator`
+### `07_firmware_emulator`
 Runs a function of the RoadRunner firmware (the `dbq` descriptor builder) on the Mac with a MIPS emulator, on real tiles of both DVDs, to test the firmware readings by execution. The output matches the documented field map on 758 / 1,164 segments, and flipping every input bit gives the exact map of which S4 bit decides which descriptor byte (and which bits the guidance never sees). Read-only, nothing is written to a disc or run on a unit.
 
 ## Setup

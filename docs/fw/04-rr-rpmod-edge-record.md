@@ -197,7 +197,7 @@ What the firmware strings say (all outside the data path, so a lead, not a resul
   FULLY_DIGIT._AREA`, `curr_junction_in_uag`, `next_junction_in_uag`; `navboot` has
   `GUIDANCE_UAG_SPLIT_SCREEN`; `gd_tool` has "Toggle RDA in partly digitized area". This fits
   `+0x10` bit 7 as a placeholder class (the data side: class 6 / subtype 1 for the whole
-  minor network of Slovenia on 21708, `examples/05_osm_vs_disc_modugno/CHANGES.md`), but no code
+  minor network of Slovenia on 21708, `examples/06_osm_vs_disc_modugno/CHANGES.md`), but no code
   path from the bit to a UAG flag was seen. Not verified.
 - **Restricted Access Area Guiding (RAAG).** `gsw_tools` and `bsw_tools` carry "Entering a
   vehicle prohibited road", "Vehicle prohibited road ahead", "the destination is in a vehicle
@@ -410,7 +410,7 @@ side road "prohib" in the picture is **not decoded**; the S4 candidates are the 
 Consequences:
 - In `gd_bjl` (section 9) `item+0x20` / `item+0x21` come from descriptor `+0x1D`, so **`ROAD_TYPE == 1` needs the
   segment's junction type to be 2** (and `item+0x22` = descriptor `+0x2B` = 2, a query-dependent value). Junction
-  type 2 is rare; data (`examples/05_osm_vs_disc_modugno`, 21708 / 21734, nine areas): 67 / 71 segments, of the 42 / 45 matched
+  type 2 is rare; data (`examples/06_osm_vs_disc_modugno`, 21708 / 21734, nine areas): 67 / 71 segments, of the 42 / 45 matched
   to OSM 37 / 40 lie on `junction=roundabout` (88-89%), on secondary / tertiary roads of class 2-4, the same kind of
   road as junction type 6 (482 matched, 459 roundabout, median length 22 m in both). No OSM tag separates 2 from 6.
   `vp_man` has `SIMPLE_ROUNDABOUT` and `COMPLEX_ROUNDABOUT` junction types, which makes "6 = ordinary, 2 = a roundabout the
@@ -434,7 +434,7 @@ level, 13 = S6 edge node, 12 = S5 node, N = bits 11-8). Readers found:
 | `(& 0x30) >> 4 == 2` | `rpmod` `sub_04e02c` (edge `+0x30` / `+0x31`, `0x4e1f4`-`0x4e230`) | edge (border) node; computed, no reader of the single bytes found; also exported by `dbq` as descriptor `+0x14` / `+0x1a` |
 | `(& 0xc0) >> 6` | `rpmod` `sub_01fd80` / `sub_04e02c` (edge `+0x3c` / `+0x3d`, `+0x44` / `+0x45` as `3 - x`) and `sub_069e20` (tests against `0xc0` / `0x80`) | level |
 
-Data against this (`examples/05_osm_vs_disc_modugno`, Puglia boxes, in-box nodes; script run 2026-10-01):
+Data against this (`examples/06_osm_vs_disc_modugno`, Puglia boxes, in-box nodes; script run 2026-10-01):
 
 | | 21708 (29,474 nodes) | 21734 (34,921 nodes) |
 |---|---|---|
@@ -483,7 +483,7 @@ arms. Reading: a fork / merge node (carriageway split, slip-road branch), which 
 and main-road junctions). **Hint, not explained**: the kind names of 6 and 7 were not decoded (the `vp_man` dump
 prints the number) and the readers of `+0x33` are in section 13.1.
 
-Data check (`examples/05_osm_vs_disc_modugno`, nodes with `& 7 == 2` or 0 in the study boxes, sections 5 and 6;
+Data check (`examples/06_osm_vs_disc_modugno`, nodes with `& 7 == 2` or 0 in the study boxes, sections 5 and 6;
 arm bearing = first segment shape step out of the node, so approximate; "cluster" = most arms within 60 degrees of
 one arm, itself included):
 
@@ -586,7 +586,7 @@ Consequences:
   field** from this JD type; the match of numbers (6 = `BIF_SYM_2`) is a coincidence of two enums, not shown to be
   the same. Section 11's guess "2 = `SIMPLE_ROUNDABOUT`" stays unverified: the S4 type 2 and the JD type 2 are not
   proven to share a table, but the roundabout data (88-89% of S4 type 2 on `junction=roundabout`) fits it.
-- **The S4 segment junction types 2, 5, 6 are kinds of whole roundabouts** (data, `examples/05_osm_vs_disc_modugno`;
+- **The S4 segment junction types 2, 5, 6 are kinds of whole roundabouts** (data, `examples/06_osm_vs_disc_modugno`;
   segments joined through shared nodes, rings of types 2 / 5 / 6 only): 189 rings on 21708 and 260 on 21734, **none
   mixes types**. `gd_bjl` tests the segment type against 5, 6, 7 together (`0xb300`, `0xb480`, `0xb554`, `0xb718`) and 9
   and 2 separately, i.e. it treats 5 / 6 as one family. Ring length (sum of segment lengths): type 5 is the small
@@ -610,7 +610,7 @@ Consequences:
 
 ## 14. Running `dbq` `sub_00fc28` in an emulator (2026-10-01)
 
-`examples/06_firmware_emulator` loads the RR `dbq` module in Unicorn (MIPS32 BE) and calls the descriptor builder
+`examples/07_firmware_emulator` loads the RR `dbq` module in Unicorn (MIPS32 BE) and calls the descriptor builder
 of section 6 on real tiles of both discs; see its `README.md` for the harness (what is stubbed, two toolchain traps: the
 3-operand `mult[u] rd, rs, rt` and a Unicorn delay-slot load bug). It is a test of the firmware reading **by execution**,
 on the same code the unit runs but not on a unit.
@@ -636,7 +636,7 @@ Not covered: the shape decoder is a stub (bytes that follow the geometry would b
 
 ## 15. The planner's edge builders run in the emulator (2026-10-01)
 
-`examples/06_firmware_emulator/rpmod_edge.py` runs both `rpmod` edge builders, `sub_01fd80` (first layout, `(edge, tile)`
+`examples/07_firmware_emulator/rpmod_edge.py` runs both `rpmod` edge builders, `sub_01fd80` (first layout, `(edge, tile)`
 with the S4 offset at `edge + 8`) and `sub_04e02c` (second layout, `(edge, tile, S4 record)`), on the real tiles and
 flips every input bit (`dependencies.py ... rpmod` / `rpmod2`; 40 segments per disc, both discs agree except one rare
 node bit). Evidence level: **executed** (same code as the unit, not on a unit). Every row below was also found by reading
@@ -679,7 +679,7 @@ What this changes in the earlier text:
 
 ## 16. `gd_bjl` item creation in the emulator (2026-10-01)
 
-`examples/06_firmware_emulator/gd_bjl.py` runs the descriptor case of the `gd_bjl` message handler (`sub_002238`,
+`examples/07_firmware_emulator/gd_bjl.py` runs the descriptor case of the `gd_bjl` message handler (`sub_002238`,
 `0x23f8`-`0x2838`) with a hand-built stack frame: descriptor at `sp + 0x2c`, junction object at `sp + 0xd4`, parser state
 zero. Around it, the harness gives the module its context: `gp[-0x7a80]` points to a context whose `+0x108` is a free list
 of `0x74`-byte items linked through `+0` (**read** from `sub_004dd0`, the allocator), and the OS-service gateway
@@ -702,7 +702,7 @@ buffers than the descriptor), whose format is not decoded yet. That is the next 
 
 ## 17. The `dbq` stream, the positions and the `gd_bjl` junction pass in the emulator (2026-10-02)
 
-Evidence levels as in `examples/06_firmware_emulator/README.md`: **executed** (the module code ran on real tiles),
+Evidence levels as in `examples/07_firmware_emulator/README.md`: **executed** (the module code ran on real tiles),
 **read** (listing only), **hypothesis**. The harness stubs several library functions (listed in 17.5), so every
 **executed** result below holds for the module code with those stubs and with the hand-built objects of 17.4.
 
@@ -808,7 +808,7 @@ through shared nodes, the whole ring in the list plus one entry arm, from = the 
 
 So `gd_bjl` **does not see a ring of segment type 2 as a roundabout**: the ring walker and `sub_005a7c` test types 5, 6, 7
 only, and a type-2 ring ends up as an ordinary junction. This is the first firmware statement about what separates type 2
-from 5 and 6. What type 2 is remains open: the data say large rings (section 13.3, `examples/05_osm_vs_disc_modugno`), the
+from 5 and 6. What type 2 is remains open: the data say large rings (section 13.3, `examples/06_osm_vs_disc_modugno`), the
 firmware says "not a roundabout for guidance". A reading that fits both is a roundabout the guidance should not announce
 (or one handled as a complex junction by `vp_man`); that is a **hypothesis**. The faults are an unbound call in a path of 4 + 11 rings, not
 traced.
@@ -868,6 +868,6 @@ about all possible routes (only junctions with 3 or 4 arms and the rings were ru
 A ring of segment type 2 is not a roundabout for `gd_bjl` (section 17.6); it is sent as `NORMAL` (21), which `vp_man` styles with
 `vp73` `sub_00702c`, the **complex junction** styling, while rings of types 5 and 6 are sent as `ROUNDABOUT` and get no styled
 picture from this dispatcher. So the firmware draws a type-2 ring as a complex junction and announces types 5 / 6 as roundabouts.
-That fits the data (type 2 rings are the larger ones, section 13.3, `examples/05_osm_vs_disc_modugno`). **Hypothesis**: that
+That fits the data (type 2 rings are the larger ones, section 13.3, `examples/06_osm_vs_disc_modugno`). **Hypothesis**: that
 `sub_00702c` really draws a ring (its code was not read), and that a map maker would use type 2 for rings that should not get a
 roundabout announcement.

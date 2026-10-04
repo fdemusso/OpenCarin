@@ -6,7 +6,7 @@
      (so the rule is not fitted to the test): class; class + built-up; class + maxspeed; class + highway + built-up; same + maxspeed.
   4. built-up bit (`+0x0A` bit 7) against OSM tags and the density of the neighbourhood (segments within 150 m).
 
-    uv run python examples/05_osm_vs_disc_modugno/06_speed.py [--disc 21708] [--snapshot now]
+    uv run python examples/06_osm_vs_disc_modugno/06_speed.py [--disc 21708] [--snapshot now]
 """
 from __future__ import annotations
 
