@@ -20,6 +20,12 @@ Updates a piece of the map from OpenStreetMap on a copy of the disc: a roundabou
 ### `05_routable_export`
 Exports the street-level road graph of a bounding box (nodes, segments with one-ways, speeds, names, forbidden turns) to GeoPackage, CSV and OSM XML, builds an OSRM graph from it and routes on it. Region-based; the README lists what is and is not exported and how travel times are modelled.
 
+### `06_osm_vs_disc_modugno`
+A read-only data study: compares both DVDs (21708, 21734) with OpenStreetMap, field by field, to say which unexplained fields of the street-tile segment record are explained, which are hints and what is unknown (`+0x1D` bit 0 = has house numbers, form of way 7, `+0x10` bit 7, speed category, node flags, S10 flags 2/3, signposts). Nothing is written to a disc; `dataset/` is small, ignored and regenerable. Verdicts per field in `CHANGES.md`; not run on a unit.
+
+### `07_firmware_emulator`
+Runs a function of the RoadRunner firmware (the `dbq` descriptor builder) on the Mac with a MIPS emulator, on real tiles of both DVDs, to test the firmware readings by execution. The output matches the documented field map on 758 / 1,164 segments, and flipping every input bit gives the exact map of which S4 bit decides which descriptor byte (and which bits the guidance never sees). Read-only, nothing is written to a disc or run on a unit.
+
 ## Setup
 Before running the examples, ensure your environment is fully set up:
 ```bash

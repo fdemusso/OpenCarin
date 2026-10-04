@@ -92,7 +92,7 @@ Every block is readable except one group:
 2. ~~**`+0x18` pass in packed `0x00` tiles.**~~ Done 2026-09-28 (`04-cf1-codec.md`
    §9.11.12): the RR reads it as pass `0x1B`; the "head" was the port's misalignment (missing
    pass `0x15` sentinel). Left open: the single 1 bit after pass `0x1B`; the meaning of `+0x18`
-   values 4 and `0x10`; DB-REL < 34 discs.
+   value `0x10` (value 4: a hint for unpaved tracks, 2026-10-01); DB-REL < 34 discs.
 3. ~~**Spatial lookup on `0x07`–`0x09`.**~~ Done 2026-09-29 (`02-geo.md` §7.3, issue #20):
    `carin.parser.spatial.tiles_at(vol, layer, lon, lat)`, checked at the centre of every
    reached tile on both DVDs. `find_bbox` marked superseded (per-type bbox offsets, §7.4);
@@ -117,8 +117,9 @@ Every block is readable except one group:
    `sub_01fd80`; recover the cost function and how turn restrictions (S10) apply.
 7. **Graph traversal**: callers of `sub_01fd80` / `sub_04e02c`, tile crossing via S6 twins,
    level switching via S8.
-8. **Unknown fields the firmware reads**: `+0x10` bit 7, `+0x1D` bits 4–6, `+0x18 & 0x10`,
-   node `+6` flags, S10 flags 2/3, the per-block-type table `gp[-0x7A30]`.
+8. **Unknown fields the firmware reads**: `+0x10` bit 7 (**UAG, unattributed geometry**, 2026-10-01: firmware `rs_dump -u` + data placeholder class), `+0x18 & 0x10`
+   (**tunnel flag**, chain record `+0x1B`, `fw/04` §7), `+0x1D` bits 4–6 (3-bit category: groups the segments of one complex junction in guidance, `gd_bjl` `sub_00a810`; also used by `rpmod` costs; `fw/04` §8–9), node `+6` flags (`fw/04` §12: bits 5-4 == 2 = edge node, `& 7` 4 and 5 alike, `& 7 == 2` = fork / merge node, `BIF_SYM_2` / `BIF_SYM_3` in guidance (§13), bit 3 unused; why some S6 nodes have bit 12 is open),
+   S10 flags 2/3 (data: not dead ends, not restrictions; see `examples/06_osm_vs_disc_modugno/CHANGES.md`); `examples/07_firmware_emulator` runs the `dbq` descriptor builder in an emulator and maps every descriptor byte to its S4 input bits (`fw/04` §14; the `dbq` stream, `gd_bjl` items and junction passes, `fw/04` §17), the per-block-type table `gp[-0x7A30]`.
 9. **Issue #6**: where `subrel` (LAYOUT `+2`) comes from; trace the RR `db_pub` setup.
 10. **RR vs Mk3 `db_pub`**: diff the CF=1 decoders (the listings in `docs/fw/` are Mk3).
     Done for `0x00` (§9.11.12) and `0x14`–`0x1E` (§9.11.11); `0x0E` and `0x29` remain.
@@ -139,6 +140,14 @@ Every block is readable except one group:
     indexes over `0x17` and `0x19`. Left open: the remaining `0x17` and `0x19` record fields;
     `0x1A`/`0x1B` `0x0104`, `0x1000`; `0x07` S1 `+0x0A`; the firmware reader (none found; the
     `hdltmc +0x2f620` switch is not one).
+
+### D0. Which value to write for an OSM way (study of 2026-10-01)
+
+`examples/06_osm_vs_disc_modugno/CHANGES.md` compares both DVDs with today's OSM, field by field. Known now: `+0x1D` bit 0 = has house numbers;
+speed category = default per (class, form, built-up), not `maxspeed`; node flags follow degree, level and section; S10 flag 0 / 1 entries match OSM
+restrictions; `+0x1C` 0x18 = bridge, S7 flag 2 with it. `+0x10` bit 7 = not fully attributed / UAG (write 0; firmware `FULLY_ATTRIB`, `fw/04` §10), `+0x18 & 0x10` = tunnel flag (`fw/04` §7). Hints: `+0x1D` bits 4-6 = category chaining the segments of one junction (write 0), `+0x18` = 4 (unpaved track), junction 3
+(pedestrian areas), signposts on ramps from `destination`. Not known: form 7 (write 11 / 12), S10 flags 2 / 3, the values of the `+0x1D` bits 4–6 category, node nibble 4 and 2,
+TMC (location table). Not done: the 2015 OSM snapshot (Overpass attic did not answer), nothing run on a unit.
 
 ### D. Writer / compiler
 14. Encoders: plain (CF=0) `0x00`–`0x03` tiles first; then `0x0E`, `0x0D`/`0x0F`/`0x11`,

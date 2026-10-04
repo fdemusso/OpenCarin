@@ -4,6 +4,30 @@
 > firmware of the unit that reads DB-REL 34 DVDs ([`03-firmware-provenance.md`](03-firmware-provenance.md)).
 > Listing: [`rr_rpmod_edge_unpack.asm`](rr_rpmod_edge_unpack.asm). Field meanings on the
 > data side: [`../carindb/03-road-network.md`](../carindb/03-road-network.md) §6.7.
+>
+> **Update 2026-10-01 (sections 5-10).** The three fields §2 left unexplained were followed through the
+> RR modules (`rpmod`, `dbq`, `gd_bjl`, `gd_man`, `vp_man`, `rs_dump`):
+>
+> | S4 field | Result | Section |
+> |---|---|---|
+> | `+0x10` bit 7 | **not fully attributed** (route chain `+0x14` "UAG"; guidance `FULLY_ATTRIB` is its inverse); no routing or drawing effect found, only carried and printed | 7, 9, 10 |
+> | `+0x18 & 0x10` | **tunnel flag** (route chain `+0x1B`, `BSI_RS_TUNNEL_MASK` = 16) | 7 |
+> | `+0x1D` bits 4-6 | **3-bit category** read by the planner (`rpmod` second edge layout `+0x1E`, adds a cost for some pairs) and by guidance (`gd_bjl` `sub_00a810`, chains segments of one junction); value meanings not found | 8, 9 |
+> | `+0x10` bit 7 in the planner | **both** edge layouts carry it: layout 1 edge `+0x1d` (set when the bit is set), layout 2 edge `+0x1f` (set when the bit is clear). Found by running the builders (section 15); readers of those edge bytes not traced | 15 |
+> | `gd_bjl` item from the `dbq` descriptor | executed chain S4 -> descriptor -> item; item `+0x1e` / `+0x1f` = node value 2; item `+0x24` = S4 `+0x1C` bit 7 (set), a reading corrected | 16 |
+> | segment junction type 2 vs 5 / 6 | `gd_bjl` treats rings of types 5 and 6 as `ROUNDABOUT` and rings of type 2 as `NORMAL` (executed, 575 + 58 / 781 + 62 rings); meaning of 2 still open | 17 |
+> | node value 2 | executed: `BIF_SYM_2/3` possible on 21 of 47 value-2 nodes, 0 of 1,452 value-0 nodes, 4 of 47 with the flag forced to 0 | 17 |
+> | `dbq` output stream | descriptor + text records (`0x50`) + points (8 bytes) + sign records (`0xe5`), counts in descriptor `+0x2e` / `+0x2f` / `+0x30` | 17 |
+> | `vp_man` types 2 / 3 | read: same path (`sub_00b1f4` + `vp73` complex styling); executed: never sent by `gd_man`; a type-2 ring is sent as `NORMAL`, styled as a complex junction (`sub_00702c`, hypothesis) | 18 |
+> | chain `+0x0d` | traversal direction of the chain, not an S4 field | 8 |
+> | node `+6` `& 7 == 2` | **fork / merge node**: `gd_bjl` counts the arms within 60 degrees that touch it; 2 arms make a `BIF_SYM_2` junction, 3 a `BIF_SYM_3`. Data: 28 / 29 and 26 / 27 nodes have such arms against 18% of node value 0 | 12, 13 |
+> | node `+6` bits 5-4, bit 3 | bits 5-4 == 2 = planner's edge node; bit 3 never set, no reader | 12 |
+> | junction type names | the 22-entry `vp_man` table (`ROUNDABOUT` ... `RDAB_EXIT`), section 13.3 | 13.3 |
+>
+> Not done: the receiver of the `rpmod` chain record's UAG byte, who calls the leaf at
+> `vp_man+0x13f8`, where guidance sets `ROAD_TYPE`. Corrections made on the way (section 8): `rpmod+0x3cffc`
+> does not use `+0x10` bit 7; (section 10): the `dbq` buffer is a pipe write; (section 11): the `0x10` / `0x20`
+> line attribute in `vp_man` depends on `ROAD_TYPE`, not on `FULLY_ATTRIB`.
 
 ## 1. Setup
 
@@ -37,12 +61,12 @@ Arguments: `$a0` = edge struct (out), `$a1` = decoded block of type `0x00`–`0x
 | `+0x0E` / `+0x0F` | copied | `+0x26` / `+0x27` | bearing at start / end ✔ |
 | `+0x10 & 0x0F` | copied | `+0x17` | road class ✔ |
 | `+0x10 & 0x70 >> 4` | copied | `+0x19` | class 6 subtype ✔ |
-| `+0x10 & 0x80` | → 1 if set | `+0x1D` | **new, meaning unknown** (bit 7 of the class byte) |
+| `+0x10 & 0x80` | → 1 if set | `+0x1D` | **not fully attributed / UAG** (route chain `+0x14`, §7; guidance inverse `FULLY_ATTRIB`, §10). Only this first layout has it |
 | `+0x11 & 0x0F` / `>> 4` | copied | `+0x14` / `+0x18` | junction type / high nibble ✔ |
 | `+0x11` + class | `+0x1B` = 0 if class = 6, or if junction ∈ {3, 4} and high nibble ≠ 4; else 1 | `+0x1B` | "open to cars": same rule as CC-93 `can_traverse`; explains the DVD-only `0x13` (closed) vs `0x43` (open) |
-| `+0x18 & 0x10` | only if DB-REL ≥ 27 | `+0x1F` | **the `0x10` value of `+0x18` is a routing flag** (meaning unknown) |
+| `+0x18 & 0x10` | only if DB-REL ≥ 27 | `+0x1F` | **tunnel flag** (route chain `+0x1B`, §7); not a routing flag, `rpmod` only copies it |
 | `+0x0A & 0x80` / `+T[0x09]+2 & 0x80` | built-up flag: street level (`0x00`) reads `+0x0A` bit 7 on DB-REL ≥ 21, `+0x1D` bit 7 below; coarse levels read `+0x0A` bit 7 on DB-REL ≥ 21, else 0 | `+0x1A` | built-up area ✔ |
-| `+T[0x09]+2 & 0x70 >> 4` | street level only | `+0x20` | **`+0x1D` bits 4–6: new, meaning unknown** |
+| `+T[0x09]+2 & 0x70 >> 4` | street level only | `+0x20` (first layout), `+0x1E` (second layout `sub_04e02c`) | **`+0x1D` bits 4–6: 3-bit category**, read in the second layout (§8); meaning unknown |
 | `+0x12` → S10 | via `sub_06322c`: first entry = `+0x12`, count = (next record's `+0x12` − this) / `T[0x14]` | lists at `+0x48` / `+0xA8` (≤ 8 × 12 B each), counts `+0x40` / `+0x44` | **forbidden turns**: entries are split by S10 `+6` bit 0 (start / end node). First firmware evidence for S10 |
 | `+0x14` → S12 | same helper, stride `T[0x15]` | — | TMC references ✔ |
 
@@ -83,10 +107,767 @@ it is not on `NAV_SW(v32).iso`.
 
 ## 4. Open
 
-1. The `+0x18` pass of packed `0x00` tiles: no firmware on this CD decodes it; its head is undecoded (§6.7).
+1. ~~The `+0x18` pass of packed `0x00` tiles~~ Done 2026-09-28 (pass `0x1B`, `04-cf1-codec.md` §9.11.12).
 2. The cost function: which edge fields feed the route cost (speed `+0x0A` bits 0–4 is not read
    by either unpacker; look for readers of `+0x0A & 0x1F`).
 3. Callers of `sub_01fd80` / `sub_04e02c`: which structure lists edges, and how the S6 twin and
    S8 level links are followed (tile crossing and level switching).
-4. Meaning of `+0x10` bit 7, `+0x1D` bits 4–6, `+0x18 & 0x10` and node `+6`.
+4. ~~Meaning of `+0x10` bit 7 and `+0x18 & 0x10`~~ Done 2026-10-01 (UAG / tunnel, §7, §10). Still open: the
+   values of the `+0x1D` bits 4-6 category (§8, §9) and node `+6` (not traced).
 5. The `gp[-0x7A30]` per-block-type table (initialised data of `rpmod`).
+
+## 5. Where the unexplained edge bits go (2026-10-01)
+
+Read from `build/rr_rpmod.asm`; the functions `0x1d2e8`, `0x1fd80`, `0x7c2fc` were also defined in
+Ghidra (its decompiler fails on this MIPS image, so the listing is the source).
+
+`sub_01fd80` has two callers, both route builders: `0x1d4d4` (in `sub_01d2e8`) and `0x1dfe8`. Each
+puts the edge on the stack and calls the packer `0x1d914`, which squeezes it into a compact record
+(bytes `0xc`–`0x10`, plus byte `0x3e` = junction type):
+
+| Edge field (`sub_01fd80`) | S4 source | Packed bit |
+|---|---|---|
+| `+0x1D` | `+0x10` bit 7 | byte `0xc` bit 4 |
+| `+0x1F` | `+0x18 & 0x10` | byte `0xf` bit 7 |
+| `+0x1E` | toll | byte `0xf` bit 6 |
+| `+0x17` | slip role | byte `0xc` bits 0–2 |
+| `+0x20` | `+0x1D` bits 4–6 | **not packed** |
+
+The route builders then use only byte `0xc` `& 7`, parts of byte `0xe` and byte `0xf` bit 1 (they
+pass them to `sub_07c2fc`, which is a small `gp`-table lookup, not a cost function). The two bits
+in question are only **copied through**:
+
+- `sub_01dc7c` unpacks the record into a 6-byte attribute struct: `[0]` = `0xf` bit 4, `[1]` = bit 6
+  (toll), `[2]` / `[3]` = `0xe` bits 0 / 1 (form 14 / 15), `[4]` = `0xf` bit 7 (**`+0x18 & 0x10`**),
+  `[5]` = bit 5.
+- `0x15758` and `0x17b50` copy `0xc` bit 4 (**`+0x10` bit 7**) to byte `+0x14` of an exported edge
+  struct, next to `+0x12` / `+0x13` / `+0x15`–`+0x19` flags.
+
+So in `rpmod` neither bit steers the route cost or a branch. They are data for another module.
+**Edge `+0x20` (`+0x1D` bits 4–6) is read by none of these routines.** The exported struct is the route-store
+chain record (§7); the bits 4-6 are carried by the second edge layout (§8) and the `dbq` descriptor (§6, §9).
+
+## 6. `dbq` builds a 52-byte segment descriptor (2026-10-01)
+
+RR `0101` has no `pbp` module (that name is CC-93 only). Listings of `dbq`, `dbpa`, `mm`, `gd_man`
+and `update_carloc` were made with `scripts/firmware/mips_listing.py`; the raw S4 byte `+0x10` is
+read in `dbq` and `dbpa` only.
+
+`dbq` `sub_00fc28` reads the S4 record `s0` directly (not through `rpmod`) and fills a 52-byte
+(`0x34`) descriptor at `sp+0x108`, then appends it to an output buffer with `sub_003b38` (copy into a
+`0x400`-byte buffer, flush with `sub_003248`; a pipe write, see §10). Tail fields are read from the u16 at
+`S4 + T[0x09] + 2`, i.e. bytes `+0x1C` (high) / `+0x1D` (low):
+
+| Descriptor byte | Source | Meaning in §6.7 |
+|---|---|---|
+| `+0x24` | u16 `& 0x0700 >> 8` | `+0x1C` bits 0–2 |
+| `+0x25` | u16 `& 0x7000 >> 12` | `+0x1C` bits 4–6 |
+| `+0x26` | `+0x10 & 0x70 >> 4` | class 6 subtype |
+| `+0x27` | `+0x0A & 0x7f` (after a DB-REL test, `sub_04ece8`) | speed category |
+| `+0x28` | `+0x0A & 0x80` (DB-REL ≥ 21) else `+0x1D & 0x80`, `>> 4` | built-up |
+| `+0x29` | u16 `& 0x70 >> 4` | **`+0x1D` bits 4–6, copied raw** |
+| `+0x2A` | 1 if u16 `& 0x8000` is 0 | `+0x1C` bit 7 inverted |
+| `+0x2C` | 0 if `+0x10 & 0x80`, else 1 | **`+0x10` bit 7 inverted** |
+
+So `dbq`, the server, also only repackages the bits; **it is the first place that reads `+0x1D`
+bits 4–6** (as a 3-bit number, no test on it). `+0x10` bit 7 is exported as "not set" (`+0x2C`),
+which fits a "has a functional class" reading better than a placeholder reading would: a
+descriptor with `+0x2C` = 0 is a segment whose class came from the placeholder.
+
+Searched for the clients: no function in `mm`, `gd_man`, `dbpa`, `update_carloc` or `rpmod` reads
+descriptor bytes `+0x28`, `+0x29` and `+0x2C` through one base register (two-byte search, window
+of 120 lines). The reply is probably unpacked byte by byte (`dbq` has an unrolled 100-byte
+serialiser at `0x4140`) or passed to a module not in this container. **Receiver found later: `gd_bjl`, §9.**
+
+### 6.1 Receiver search and a string lead (2026-10-01)
+
+> Superseded by §9 and §10: the receiver is `gd_bjl` (offsets differ from `dbq`'s, as guessed below) and
+> the UAG / RAAG leads were followed (UAG confirmed, RAAG not traced). Kept for the record of what was searched.
+
+Listings of every module of the `bsw2` container (`hdlbsi`, `update_carloc`, `dbpa`, `dbc`,
+`db_con`, `dbd`, `gd_man`, `gd_bjl`, `mm`, `hdltmc`, `taxi`, `tpd`) and of `mm_sig` / `rs_dump`
+were searched for readers of the descriptor bytes (`+0x24`…`+0x2C`, in several byte combinations,
+windows of 30 to 120 lines). The only match is the inline 100-byte struct copy at `dbq+0x411c`
+(a plain `lb` / `sb` copy, no field access). The receiver is **not found**; the descriptor is
+probably handled as an opaque block or read through offsets that differ from `dbq`'s.
+
+What the firmware strings say (all outside the data path, so a lead, not a result):
+- **UAG = "unattributed geometry".** `rs_dump -u` prints "unattributed geometry flag"; `nav_tst`
+  and `bsitst` print `uag = POS_UAG / POS_NOT_UAG`, `digitization = PARTLY_DIGIT._AREA /
+  FULLY_DIGIT._AREA`, `curr_junction_in_uag`, `next_junction_in_uag`; `navboot` has
+  `GUIDANCE_UAG_SPLIT_SCREEN`; `gd_tool` has "Toggle RDA in partly digitized area". This fits
+  `+0x10` bit 7 as a placeholder class (the data side: class 6 / subtype 1 for the whole
+  minor network of Slovenia on 21708, `examples/06_osm_vs_disc_modugno/CHANGES.md`), but no code
+  path from the bit to a UAG flag was seen. Not verified.
+- **Restricted Access Area Guiding (RAAG).** `gsw_tools` and `bsw_tools` carry "Entering a
+  vehicle prohibited road", "Vehicle prohibited road ahead", "the destination is in a vehicle
+  prohibited area" and the `RESTRICTED_OPA` route criterion. This fits the car-access rule of
+  `+0x1B` (junction 3 / 4 closed unless the high nibble is 4, §2) and the data-side hint that
+  junction 3 is pedestrian areas. Not verified either.
+- No string names `+0x1D` bits 4–6.
+
+## 7. The route chain record and `rs_dump -u` (2026-10-01)
+
+`rs_dump` (`bsw_tools`) reads the route store with `RP_rs_get_chaindata` and prints one record per
+chain. The record is the one `rpmod` writes at `0x156c4`–`0x15824` (and `0x17b00`–`0x17c40`,
+the same code for the other route variant). Field by field (`rs_dump` print code at `0x2c04`–`0x2e38`,
+strings from its data; `rpmod` writer; the packed bits are those of section 5):
+
+| Chain byte | `rs_dump` prints | `rpmod` source (packed bit) | S4 source |
+|---|---|---|---|
+| `+0x0c` | slip role (`& 7`) | `0xc` bits 0-2 | slip role (`+0x18 & 3`, DB-REL >= 27) |
+| `+0x0d` | third value of `chain_%04d: (id, n, x)` | `0xc` bit 7 | not traced |
+| `+0x14` | **`UAG` / `uag` (option `-u`, "Dump unattributed geometry flag")** | `0xc` bit 4 | **`+0x10` bit 7** |
+| `+0x17` | " motorway" | `0xf` bit 4: class < 4 and form < 4 | class, form |
+| `+0x18` | " toll road" | `0xf` bit 6 | `+0x0B` bit 6 |
+| `+0x19` | " boat ferry" | `0xe` bit 0 | form 14 |
+| `+0x1a` | " railway ferry" | `0xe` bit 1 | form 15 |
+| `+0x1b` | **" tunnel"** | `0xf` bit 7 | **`+0x18 & 0x10`** |
+| `+0x1c` | " mountain pass" | `0xf` bit 5, always cleared by the packer (`0x1dc58`) | none |
+
+The order matches the `BSI_RS_*_MASK` list the test tool `nav_tst` prints (1 motorway, 2 toll
+road, 4 boat ferry, 8 railway ferry, 16 tunnel, 32 mountain pass), so the chain bytes `+0x17`-`+0x1c`
+are those six route attributes. `+0x14` is a seventh flag, shown only with `-u`.
+
+Result:
+- **`+0x10` bit 7 = the "unattributed geometry" (UAG) flag of the chain.** The firmware text around
+  it (`POS_UAG`, `curr_junction_in_uag`, `PARTLY_DIGIT._AREA`, `GUIDANCE_UAG_SPLIT_SCREEN`, "Toggle
+  RDA in partly digitized area") shows the unit treats such chains as geometry without attributes.
+  This is the firmware side of the data finding (class 6 / subtype 1 placeholder).
+- **`+0x18 & 0x10` = the tunnel flag** (`BSI_RS_TUNNEL_MASK` = 16). Data: all 8 matched segments with
+  the bit (3 on 21708, 5 on 21734) are underpasses in today's OSM (`layer=-1`, `tunnel=yes` on 5 of
+  8; "sottovia"), all with `+0x1C` = 0x1D. The reverse is weak: of 21 / 23 matched OSM tunnels, 1 / 4
+  carry the bit (most are `+0x1C` = 0x16).
+- Mountain pass is never set by this build, whatever the data holds.
+- `+0x1D` bits 4-6 are not copied into the chain record (they are in the second edge layout and the `dbq`
+  descriptor, §8-9); `+0x0d` of the chain record is the traversal direction (§8).
+
+Method: option `u` is case `0x26a0` of the jump table at `0x1fb4` in `rs_dump` (table index = char - 0x3f,
+target = `0x1fa0` + entry); it sets the flag at `gp - 0x7b95`, read at `0x2dc0`, which selects the string
+`UAG` or `uag` (module offsets `0x503` / `0x4ff`) from chain byte `+0x14`.
+
+## 8. Chain byte `+0x0d`, the second edge layout, and `+0x1D` bits 4-6 (2026-10-01)
+
+**Chain record `+0x0d` is the traversal direction, not an S4 field.** `0x1d914` copies it from bit 0 of
+byte `+0x0c` of the 16-byte chain reference that the route builder receives (`sub_01d2e8`'s second
+argument; bytes `0`-`0xb` of the reference are copied as they are, `+8` is a u16 that `rs_dump` prints
+as the second value of `chain_%04d: (id, n, dir)`). `rs_dump` uses it as a direction: with `-i` it
+walks the chain's intermediate points from the last to the first when `+0x0d == 1` and from the first
+to the last otherwise (`0x2f18`-`0x2fe8` against `0x305c`-`0x30d4`). Nothing in S4 feeds it.
+
+**UAG chains.** In `rpmod` the UAG flag (chain `+0x14`) is only copied: `0x3bd7c`-`0x3bdac` moves chain
+bytes `+0x14`-`+0x19` (UAG, motorway, toll, boat ferry, railway ferry, `+0x19`) into the structure
+that the route-store API returns. No branch on it exists in `rpmod`. The users are outside the
+`bsw2` container (`GUIDANCE_UAG_SPLIT_SCREEN` is a `navboot` string, so `ghandler` / `manager` /
+`supervisor` there), not traced. Correction to section 5: edge `+0x1D` at `0x3cffc` is **not** this
+bit (see next paragraph), so the cost routine there says nothing about UAG.
+
+**The second edge layout (`sub_04e02c`)** (**corrected in section 15**: an earlier version said it has no `+0x10`
+bit 7; it does, `& 0x80` at `0x4e140`-`0x4e158`, edge `+0x1f`, which the first reading missed because it searched for
+the masks `0xf` and `0x70` only). It reads the class byte as `& 0xf` (`+0x18`), `& 0x70` (`+0x1a`) and `& 0x80`. Its fields: `+0x10` length, `+0x14` junction, `+0x15`
+direction restriction, `+0x16` form, `+0x17` slip role, `+0x18` class, `+0x19` junction high nibble,
+`+0x1a` class-6 subtype, `+0x1b` built-up, `+0x1c` closed-to-cars flag (0 if class 6; 1 if junction or
+high nibble is 3 / 4 by the rule of section 2), `+0x1d` = byte `gp-0x6431 + u16 at block+4` (a
+per-block-type flag: 0 for street level; the planner tests it as "coarse level"), `+0x1e` =
+**S4 `+0x1D` bits 4-6, street level only (0 on coarse levels)**, `+0x20` toll. So the roadmap's old
+remark that the cost routine at `0x03cffc` uses `+0x10` bit 7 was wrong: `+0x1d` there is the level flag.
+
+**`+0x1D` bits 4-6 are read by the planner** as a 3-bit category (`+0x1e` of this layout), with 0 and
+7 neutral and 1-6 told apart:
+- `0x464a0`-`0x464e4`: if the current edge is street level with category 0 and the next edge's category
+  is 1, 3, 4 or 6, a constant (`gp-0x6a78`) is added to a cost accumulator.
+- `0x4672c`-`0x46784` (`sub_0462c0`): categories 1-6 all set one flag, which then triggers a length-based
+  computation (`0x467a4`-`0x467ec`).
+- `0x47908`-`0x47960`: one mode accepts {1, 4} outright, {3, 6} if the class number of the first edge
+  is lower than the other's, another mode accepts {2, 3, 5}.
+- `0x43d68`: category non-zero marks the edge (with slip role 4) in a descriptor.
+The groups overlap (3 is in two), so this is a category with several uses, not a bit mask. The
+meaning of a value is **not** found; the effect is a route-cost or ordering difference.
+
+## 9. Who reads the UAG bit: `dbq` -> `gd_bjl` -> `gd_man` (2026-10-01)
+
+Two separate paths carry `+0x10` bit 7. The route-store one (section 7) ends in `rpmod`'s chain
+record. The guidance one goes through the `dbq` descriptor (section 6):
+
+1. `dbq` `sub_00fc28` writes descriptor byte `+0x2C` = 0 if `+0x10` bit 7 is set, else 1
+   (i.e. 1 = "attributed").
+2. **`gd_bjl` `sub_002238` (`0x2490`-`0x2578`) reads the descriptor** (base `$s1`, bytes `+0x13`...`+0x2F`
+   in one run, the 52-byte shape of section 6) and copies it into its own segment record:
+   descriptor `+0x2C` -> record `+0x67`, `+0x29` (`+0x1D` bits 4-6) -> `+0x5E`, `+0x28` -> `+0x65`,
+   `+0x2A` -> `+0x24` (as 0 / 1), `+0x1D` -> `+0x20` / `+0x21`, `+0x2D` -> `+0x1D`, `+0x2B` -> `+0x22`.
+   Not proven that `$s1` is the `dbq` descriptor and not a copy of it, but offsets and sizes agree.
+3. Record `+0x67` is only copied afterwards (`0x5620`, `0x12a24`), except in `sub_00fbd4` at
+   `0xffa4`: the junction item's byte `+0x61` is set to **1 if the item has no exit segment, else to the
+   exit segment's `+0x67`** (`0xff7c`-`0xffb4`).
+4. **`gd_man` `sub_018efc` reads item `+0x61`** (`0x18f78`) and puts it, with item `+0x60`, the
+   manoeuvre code from item `+0x40 & 0xf` (table: 0x0b, 0x16, 0x37, 0x42, 0x4d) and two pointers'
+   data, into a `0x1c`-byte record at `sp+0x8`, which is sent at `0x19064`-`0x19070` as message type
+   `0x10` (`a0 = 0x10`, `a1 = sp+8`, `a2 = 0x1c`). The record's byte `+0x6` (= `sp+0xe`) is the flag.
+   `sub_019108` then builds similar records for the junction list.
+
+So a segment with `+0x10` bit 7 reaches the guidance output as a **0 in the junction record when the
+junction's exit segment is unattributed**. The BSI test tools name the output fields
+`curr_junction_in_uag` / `next_junction_in_uag` (`nav_tst`, shown next to `dtji_is_valid`); this path does
+not end there. The receiver of type `0x10` is `vp_man` and the field is `FULLY_ATTRIB` (§10). Where the
+BSI `uag` position fields come from is not traced.
+
+What `+0x1D` bits 4-6 do in `gd_bjl`: record `+0x5E` holds the category; `sub_00a810` (`0xa88c`-`0xa990`)
+decides whether a candidate segment can follow the current one in a junction: category 1 only after
+category 1, 2 only after 2, 3 after any non-zero (and not form 11 / `0x10(...) == 0xb`), 4, 5, 6 after any
+non-zero; if the candidate is a class 6 element, the current segment must be class 6 too. So the category
+groups the segments **inside one complex junction** and tells which may be chained. All seen values
+are class 5 (service, parking aisles, one-way tertiary of Duisburg), which fits "small segments that
+make up a junction". This is a reading of the compare chain, not a proof of the names.
+
+## 10. The receiver of message `0x10`: `vp_man`, "FULLY_ATTRIB" (2026-10-01)
+
+`gd_man` `sub_018778(type, buf, len)` is not a direct call: it appends `type, data` to a `0x400`-byte
+buffer and flushes it into the OS-9 pipe **`/c0/_128_/pipe/gdman_to_vpman_channel`** (path in `gd_man`
+data; `vp_man` opens the same path, `vp_man` strings `0x164ba`). The reader is **`vp_man`** (`navboot`,
+the junction picture / "view presenter": files `vp70_prepare_junction.c`, `vp73_styl_complex_junctions.c`,
+`vp75_styl_simple_junctions.c`). `dbq`'s `sub_003b38` has the same shape, so section 6's "reply buffer"
+is probably also a pipe write.
+
+- `vp_man` `sub_016508` reads the pipe; `0x168d0`-`0x168f8` switches on `type - 0xb` (9 cases, types
+  `0x0b`-`0x13`, jump table at `0x16900`). **Type `0x10`** (`0x16a78`) allocates `0x1c` bytes, copies the payload,
+  clears `+0` and `+0x10`, and appends it to the list at `[state + 4]`.
+- The dump code (`sub_01e9e4` and `0x1eb1c`-`0x1eb5c`) names the fields of that record. The record is a
+  **`JUNCTION_DESCRIPTOR`**: `+5` is **`DRIVING_SIDE`** (gd_bjl item `+0x60`), **`+6` is `FULLY_ATTRIB`**
+  (gd_bjl item `+0x61`, i.e. the exit segment's `+0x67`, i.e. `dbq` descriptor `+0x2C`, i.e. the inverse of
+  S4 `+0x10` bit 7). The other strings of that dump: `FROM_CHAIN`, `TO_CHAIN`, `PART_OF_JUNCT`,
+  `CONNECT_ANGLE`, `ADVICE_DIRECTION`, `W_PARTNER`, "sideroad angle ... attrib(0x%02x)".
+- So **S4 `+0x10` bit 7 set = the segment is not fully attributed** in the firmware's own words
+  (value 1 of `FULLY_ATTRIB` = bit clear). This agrees with the UAG name of section 7 and the placeholder
+  class of the data.
+- Effect of `FULLY_ATTRIB` found: only a leaf at `vp_man+0x13f8` that returns 1 if any junction descriptor in
+  the list has `FULLY_ATTRIB == 0` (no caller found), and the dump. **No drawing decision on it was found.**
+  (An earlier version of this section said that `vp75_styl_simple_junctions.c` picks the line attribute
+  `0x10` / `0x20` from it. That was wrong: the byte `+6` tested at `0x34c0` / `0x4048` belongs to a *chain*
+  descriptor, where it is `ROAD_TYPE`; see section 11.)
+
+Reading for a map maker: `+0x10` bit 7 reaches the junction pictures as a field that is printed and tested
+by one unused-looking helper. Writing 0 is safe. Nothing in this path touches routing.
+
+## 11. `vp_man` picture elements and the attribute ids `0x10` / `0x20` (2026-10-01)
+
+Layouts, from the dump function `sub_01e9e4` (junction list) and `sub_01ac7c` (element list):
+
+| Record | Fields (byte offset) |
+|---|---|
+| junction descriptor (JD, pipe type `0x10`) | `+4` TYPE, `+5` DRIVING_SIDE, `+6` FULLY_ATTRIB, `+7` ADVICE_DIRECTION, `+8` FROM_CHAIN, `+0xc` TO_CHAIN, `+0x10` list of chain descriptors, `+0x14` CONCAT, `+0x16` ANGLE, `+0x18` CENTER |
+| chain descriptor (CD) | `+4` PART_OF_JUNCT, `+5` PLANNED, `+6` **ROAD_TYPE**, `+0xc` ORIG_ANGLE, `+0xe` CONNECT_ANGLE, `+0x10` CONNECT_NODE, `+0x14` ADVICE_DIRECTION, `+0x18` NODE_LIST |
+| picture line element (`sub_01a604`, 28 bytes) | `+4`..`+0xa` four `s16` (x0, y0, x1, y1), `+0xc` *connected* id, `+0x10` **attribute id**, `+0x14` *special* id (0), `+0x18` index |
+| picture arc element (`sub_01a6ac`) | same, with a fifth `s16` at `+0xc` (radius) and two words at `+0x10`, `+0x14` |
+
+Name tables (the dump's decoders `sub_01a3a4`, `sub_01a310`, `sub_01a4f4`, the arc-type decoder at `0x1a53c`):
+- attribute id (`+0x10`): `0` none, `1` planned, `3` exit, `5` entry, `9` concat-p, **`0x10` normal**, `0x18` concat-np, **`0x20` prohib**; any other value prints `unknown attrib-id`.
+- connected id (`+0xc`): `0` none, `1` 1st, `2` 2nd, `3` both.
+- special id (`+0x14`): `0` none, `1` moto.
+- arc type: `0` none, `1` main, `2` sub.
+
+So `0x10` is the **normal** line attribute and `0x20` the **prohibited** one. `vp75_styl_simple_junctions.c`
+(`sub_00385c`, `0x38ac`, `0x4048`-`0x4054`; `sub_002cd8`, `0x34c0`) walks the junction's chain list, skips the
+FROM_CHAIN and TO_CHAIN nodes (`0x3484`-`0x349c`), takes the first side road with `PART_OF_JUNCT == 0` and
+builds its line with attribute `0x20` (prohib) when that chain's `ROAD_TYPE == 1`, else `0x10` (normal),
+connected id 1 (`1st`). `ROAD_TYPE` is set by guidance, not read
+from S4 here (not traced to a field). A post-pass (`0x1ac08`-`0x1ac4c`) rewrites elements of one index: attribute
+`9` -> `5` with connected id 2, and `0x18` -> `0x10` with connected id 1.
+
+### 11.1 Where `ROAD_TYPE` comes from (2026-10-01)
+
+Chain descriptors reach `vp_man` as pipe message type `0x0f` (`vp_man` `0x169f8`: allocates `0x1c`, appends the node to
+the last junction descriptor's list at `+0x10`; type `0x0d` carries `0x0c`-byte node-list items, type `0x0e` another
+`0x0c`-byte list). The sender is `gd_man` `sub_019108` (`0x19264`-`0x1928c`, `a0 = 0xf`, `a2 = 0x1c`). Its record is built at
+`sp+0x20`: `+4` PART_OF_JUNCT (`item+0x21`, cleared for the from / to chains), `+5` PLANNED (`item+0x10 >= 0`), `+6`
+**ROAD_TYPE** = `sub_0195bc(state, item)`, `+8` word from `sub_01969c`, `+0xc` / `+0xe` angles.
+
+`sub_0195bc` returns, in this order (item = the `gd_bjl` segment record):
+1. if `item+0x2a` is 2 or 3 and `sub_01969c(item)` is 0 -> 0;
+2. else if `item+0x21 != 0` and `sub_0194c8()` is not 1 -> 0; otherwise `item+0x2a`;
+3. then: if `item+0x22 == 2` and `item+0x20 == 2` -> **1**; if `item+0x5f == 7` it returns 0 / 1 depending on
+   two global pointers (`gp-0x6770`, `gp-0x6774`) compared with the item and with `state+0x1c`.
+
+So `ROAD_TYPE == 1` is **a segment whose `item+0x22` and `item+0x20` are both 2**. In the `gd_bjl` copy
+(section 9) `item+0x20` is the `dbq` descriptor byte `+0x1D` (not the S4 byte; unnamed, `sub_00fc28` writes it
+from the segment) and `item+0x22` is descriptor `+0x2B`; neither was traced to an S4 field. Hence what makes a
+side road "prohib" in the picture is **not decoded**; the S4 candidates are the segment's direction restriction
+(`+0x0B` bits 4-5, 2 = one-way against) or the car-access byte, but that is a guess. Open.
+
+### 11.2 How `dbq` writes descriptor `+0x1D` and `+0x2B`; node `+6` bits (2026-10-01)
+
+`dbq` `sub_00fc28(a0, a1, a2, a3)`; descriptor base `sp+0x108` (`+k` = `sp+0x108+k`). Its four callers are `0xbbc0`,
+`0xc1c8`, `0xc31c`, `0xc3f0`.
+
+| Descriptor byte | Written from | Meaning |
+|---|---|---|
+| `+0x1D` (`sp+0x125`) | S4 `+0x11`: low nibble, but **0 if the low nibble is 0 or the high nibble is 4** (`0xfd7c`-`0xfdac`) | the segment's junction type, 0 for "not a junction" and for the open-to-cars exception of §2 |
+| `+0x1E` (`sp+0x126`) | S4 `+0x11` high nibble, **2 if the low nibble is 0 or the high nibble is 4** | the high nibble with the same default |
+| `+0x1C` (`sp+0x124`) | argument `a2` (0, 1 or 2) set by the caller from a list-membership test (`sub_050654`, then 1 / 2) | not an S4 field |
+| `+0x2B` (`sp+0x133`) | argument `a3` | not an S4 field; the callers pass a list-lookup result (`sub_0506cc`, a sorted-list search with a compare callback at `[list+0x10]`) |
+| `+0x12` / `+0x13` / `+0x14` | start node `+6` & 8, `& 7`, `(& 0x30) >> 4` (`0xfd10`-`0xfd34`) | **node `+6` flags**, see below |
+| `+0x18` / `+0x19` / `+0x1A` | end node `+6` & 8, `& 7`, `(& 0x30) >> 4` (`0xfd54`-`0xfd78`) | same, end node |
+
+Consequences:
+- In `gd_bjl` (section 9) `item+0x20` / `item+0x21` come from descriptor `+0x1D`, so **`ROAD_TYPE == 1` needs the
+  segment's junction type to be 2** (and `item+0x22` = descriptor `+0x2B` = 2, a query-dependent value). Junction
+  type 2 is rare; data (`examples/06_osm_vs_disc_modugno`, 21708 / 21734, nine areas): 67 / 71 segments, of the 42 / 45 matched
+  to OSM 37 / 40 lie on `junction=roundabout` (88-89%), on secondary / tertiary roads of class 2-4, the same kind of
+  road as junction type 6 (482 matched, 459 roundabout, median length 22 m in both). No OSM tag separates 2 from 6.
+  `vp_man` has `SIMPLE_ROUNDABOUT` and `COMPLEX_ROUNDABOUT` junction types, which makes "6 = ordinary, 2 = a roundabout the
+  picture treats differently" a candidate, **not verified**.
+- `gd_bjl` also tests the start / end node value `& 7 == 2` (descriptor `+0x13`, `+0x19` -> segment record `+0x1E`, `+0x1F`
+  as 0 / 1, section 9 list). So **node `+6` bits 0-2 = 2 is read by the guidance** (the data side calls it "node nibble 2",
+  `03-road-network.md` §6.7); bit 3 and bits 4-5 are copied to descriptor bytes `+0x12`, `+0x14` / `+0x18`, `+0x1A` and not
+  yet followed. The route planner reads `& 7 == 1` and bits 6-7 (section 2).
+
+## 12. Node `+6` flags in the firmware (2026-10-01)
+
+Node record byte `+6` (the high byte of the `u16` that the data side calls "flags", `03-road-network.md` §6.7: bits 15-14 =
+level, 13 = S6 edge node, 12 = S5 node, N = bits 11-8). Readers found:
+
+| `+6` bits | Reader | Use |
+|---|---|---|
+| `& 7 == 1` | `rpmod` `sub_01fd80` (edge `+0x28` / `+0x29`) and `sub_04e02c` (edge `+0x2e` / `+0x2f`) | dead end (start / end node); read by `sub_029254` and `sub_03bcc8` |
+| `& 7` in {4, 5} | `rpmod` `sub_04e02c` (edge `+0x32` / `+0x33`, `0x4e26c`-`0x4e2b0`) | 4 and 5 are treated alike; computed, no reader of the single bytes found |
+| `& 7 == 2` | `dbq` descriptor `+0x13` / `+0x19`, then `gd_bjl` (`0x24ac`, `0x24d8`: segment record `+0x1e` / `+0x1f` = 1) | the guidance flags a segment whose start / end node has value 2 |
+| `& 8` (bit 3) | `dbq` descriptor `+0x12` / `+0x18` only | exported, no reader found |
+| `(& 0x30) >> 4 == 2` | `rpmod` `sub_04e02c` (edge `+0x30` / `+0x31`, `0x4e1f4`-`0x4e230`) | edge (border) node; computed, no reader of the single bytes found; also exported by `dbq` as descriptor `+0x14` / `+0x1a` |
+| `(& 0xc0) >> 6` | `rpmod` `sub_01fd80` / `sub_04e02c` (edge `+0x3c` / `+0x3d`, `+0x44` / `+0x45` as `3 - x`) and `sub_069e20` (tests against `0xc0` / `0x80`) | level |
+
+Data against this (`examples/06_osm_vs_disc_modugno`, Puglia boxes, in-box nodes; script run 2026-10-01):
+
+| | 21708 (29,474 nodes) | 21734 (34,921 nodes) |
+|---|---|---|
+| bits 4-5 on S5 nodes | value 1: 25,646 (all) | 30,439 (all) |
+| bits 4-5 on S6 nodes | value 2: 3,696; **value 3: 132** | 4,332; **value 3: 150** |
+| `& 7` | 0: 19,053, 1: 4,071, **2: 30**, **4: 36**, 5: 6,284 | 22,066, 5,274, 28, 37, 7,516 |
+| bit 3 | never set | never set |
+
+What follows:
+- **Bits 4-5 == 2 is the firmware's "edge node" flag.** All S6 nodes with only bit 13 qualify; the 132 / 150 S6 nodes
+  that also have bit 12 (value 3, the "189 nodes" of the data study, here only those inside the boxes) do **not**, so the
+  planner treats them as ordinary nodes stored in the edge section. This is the first reading of those nodes, not a proof
+  of why the compiler sets bit 12 on them.
+- **`& 7` in {4, 5} are one class for the planner.** N = 4 (36 / 37 nodes, degree-2 street-level nodes) behaves like N = 5
+  (degree 2): the difference is not used by the cost code that was found. The data study could not tell them apart either.
+- **`& 7 == 2` is read by the guidance** (`gd_bjl`), consistent with the data hint that N = 2 nodes (30 / 28) are slip-road and
+  main-road junctions; what the flag does is in section 13.
+- **Bit 3 is never set** in the 64,395 boxed nodes of both discs and is read by nobody found; a generator keeps it 0.
+
+## 13. What `gd_bjl` does with the node value 2 flag (2026-10-01)
+
+Segment record `+0x1E` / `+0x1F` (`gd_bjl` `0x2490`-`0x24d8`) = 1 when the segment's start / end node has `& 7 == 2`
+(descriptor `+0x13` / `+0x19`). The only reader found is `sub_00e8d8` (`0xe8d8`-`0xebcc`, called from `0x10738` and
+`0x11b78`), a pass over the segment list of one junction object (`s4`, list head at `obj+0x24`). For each other
+segment it skips:
+- segments with a junction type (`item+0x21`) unless `sub_0135c0` is true or `item+0x5d` is set;
+- segments with `item+0x22 == 2` (the query-dependent value of section 11);
+- segments whose angle `|item+0x30|` is not below 60 degrees (90 degrees when the junction `+0x10 == 3` and
+  `sub_013504` is false or its class byte `+0x5f` is 7, with the upper bound 180 degrees).
+
+Of the survivors, it counts those whose **start** point equals the junction centre (`obj+0x48` against `item+0x38`)
+and `+0x1E` is set, or whose **end** point equals it (`item+0x40`) and `+0x1F` is set. Result:
+
+| Count | Effect |
+|---|---|
+| 2 | junction object `+0x10` (type) := **6**; the two segments get `+0x33` := 1 and 2 |
+| 3 | junction object `+0x10` := **7**; the three segments get `+0x33` := 1, 4, 2 |
+| other | unchanged |
+
+When it fires, a flag byte in the caller's frame (`sp+0xc`) is set, and the caller sets byte `+0xc` of the
+junction. `sub_00e804` (`0xe804`) then treats junction types 6 and 7 as "attributed" (sets `+0x11` := 1).
+
+So the node value 2 marks a node **where two or three roughly parallel segments (within 60 degrees of the
+current one) meet**, and the guidance turns that into a junction of kind 6 or 7 with an ordering (`+0x33`) of its
+arms. Reading: a fork / merge node (carriageway split, slip-road branch), which agrees with the data hint (slip-road
+and main-road junctions). **Hint, not explained**: the kind names of 6 and 7 were not decoded (the `vp_man` dump
+prints the number) and the readers of `+0x33` are in section 13.1.
+
+Data check (`examples/06_osm_vs_disc_modugno`, nodes with `& 7 == 2` or 0 in the study boxes, sections 5 and 6;
+arm bearing = first segment shape step out of the node, so approximate; "cluster" = most arms within 60 degrees of
+one arm, itself included):
+
+| Disc | Node value | n | cluster >= 2 | cluster 2 | cluster 3 |
+|---|---|---|---|---|---|
+| 21708 | 2 | 29 | **28** | 21 | 7 |
+| 21708 | 0 | 18,645 | 3,394 (18%) | | |
+| 21734 | 2 | 27 | **26** | 18 | 8 |
+| 21734 | 0 | 21,515 | 3,788 (18%) | | |
+
+97% (28 / 29, 26 / 27) of the node-2 nodes have two or three arms that leave within 60 degrees of each other,
+against 18% of the value-0 nodes (mostly 3-arm junctions with no such pair). The one exception on each disc is a
+3-arm node without a pair. This fits the firmware reading; it does not prove it, because the same geometry (a slip
+road leaving a main road at a shallow angle) would also be what a human calls a junction with a slip road. Not
+checked: the other filters of `sub_00e8d8` (junction type, `item+0x22`), and the angle the firmware uses, which is a
+field of the segment record and not this bearing. The reading "node value 2 = fork / merge of near-parallel arms" is
+now **explained for the data side** (n = 29 / 27, 2 exceptions); the kind names 6 and 7 are `BIF_SYM_2` and `BIF_SYM_3` (section 13.3).
+
+### 13.1 Readers of `+0x33` (2026-10-01)
+
+`+0x33` of the `gd_bjl` segment record is the **role of the segment as an arm of the junction**: 1 and 2 are the
+two sides, 4 the third arm of a kind-7 junction (section 13); 0 = unassigned. It is written by `sub_00e8d8` and
+by a second place at `0xb348`-`0xb368` (role 2 if record `+0x5d` == 1, else 1; the junction object `+0x58` or `+0x5c`
+is then incremented, so these two words **count the arms on side 1 and side 2**). Readers in `gd_bjl`:
+
+| Address | Use |
+|---|---|
+| `0xb36c`-`0xb3ac` | switch on role 1 / 2 for the count increment above |
+| `0xb408`-`0xb428` | the first segment's role picks the count (`+0x58` or `+0x5c`) stored at junction `+0x24` |
+| `0xb684`-`0xb6dc`, `0xb724`-`0xb794` | numbers the arms of one side (`+0x28` = running index) and compares roles of neighbours |
+| `0xdca0`-`0xdd14` | copies the role into `+0x32` (1, 2, 3, 4 map to themselves, anything else 5) |
+| `0xe120`-`0xe148` | role 4 is stored as 4, other roles as is, into byte `+0x40` of the junction (default 5 when the segment is not the planned one) |
+| `0x12124`-`0x121e0` | for role 1 / 2, takes the side's arm count (`+0x58` / `+0x5c`); a count of 0 or 1 combined with `+0x32` == role sets a flag byte in a per-arm table |
+
+`gd_man` reads `+0x32` / `+0x33` only to append them to its event trace (`sub_01a264`, a ring of `u16` codes at
+`gp-0x52c8`), not to decide anything. What the per-arm table at `0x121d0` feeds, and the names of the roles, were not
+traced. Verdict: **hint** (structure read, no data to test it on: the role is computed by the firmware, not stored on
+the disc).
+
+### 13.2 The per-arm table at `0x121d0` (2026-10-01)
+
+The code `0x120c4`-`0x124d8` sits in the same large `gd_bjl` function that calls `sub_00e8d8` (`0x11b78`; the
+listing has no label for it). It is a **junction refinement pass** on a junction object (`s0`, descriptor at
+`obj+4`). The "table" is a stack frame at `sp+0x10`:
+
+| Frame field | Content |
+|---|---|
+| `+0` + 2 * i, `+1` + 2 * i | arm i (up to 4): arm type (`+0x10` of the arm's junction object), role (1 or 2, the `+0x33` of section 13.1) |
+| `+8` | number of arms taken |
+| `+0xc` | largest distance step between consecutive arms (difference of `+0x18` of the `+0x1c` object; a position along the route) |
+| `+0x10` | 1 if arms of both roles 1 and 2 were taken |
+
+Entry condition (`0x120c8`-`0x12108`): junction type (`obj+0x10`) == `0x13`, or `0x14` with `obj+0x40` == 3. Other
+types skip the pass with an empty table. An arm is taken when it has `+0x29` set and its side's arm count (`+0x58` /
+`+0x5c`) is 0, or 1 with `+0x32` equal to the role (`0x12110`-`0x12198`).
+
+With the table filled, a switch on `obj+0x40 - 3` (`0x12278`-`0x122a0`; only 3, 5, 0x11, 0x12 do anything) decides
+whether to rewrite the junction:
+
+| `obj+0x40` | Rewrite when |
+|---|---|
+| 3 | exactly 2 arms taken, their distance step >= 51 (`0x33`) and only one role present: `obj+0x10` := `0x13` |
+| 5 | 1 arm taken, or arms of both roles present while `s0+0x18` == 0 |
+| `0x11`, `0x12` | 1 arm taken and `obj+0x11` == 1 |
+
+On a rewrite with both roles present, the junction is collapsed: `obj+0x6c` := old type, `+0x6d` := 4, `+0x40` := 4,
+the `+0x20` segment's `+0x32` := 4, `+0x68` := 1. With one role, the table is copied into `obj+0x6c...` (count in
+`+0x68`) and the `+0x20` segment's `+0x32` := the role of the first arm. Then `sub_00c260`, `sub_00e710`,
+`sub_00e804` and `sub_00f0b4` re-run on it. Without a rewrite the old values are saved (`+0x6c`, `+0x6d`, `+0x68` := 1).
+
+So the table is the **list of the arms that survive as distinct branches of a junction of kind `0x13` / `0x14`**,
+with their side; the pass merges junctions whose arms collapse to one or two on a side. This is a reading of the
+control flow. Junction types `0x13` / `0x14` are `OTHER` and `STYLIZED_DCW_JUNC...` (section 13.3). Not traced: the meaning of `obj+0x40` (3, 4, 5, `0x11`, `0x12`) and
+the effect of `+0x6c` / `+0x6d` / `+0x68`. Verdict: **hint**; none of it is on the disc, so no data can test it.
+
+### 13.3 Names of the junction types (2026-10-01)
+
+`vp_man`'s junction dump decoder (`0x1db08`-`0x1dd60`, string `JD -> type: %s(%d)`) switches on `JD+4` minus 1 over 22
+cases (anything else prints `?????`). The names are strings of `navboot`; some are cut in the table itself (`SIMPLE_ROUNDAB`, `ARRIVAL_DESTIN`, `STYLIZED_DCW_JUNC`; the first has a full
+copy `SIMPLE_ROUNDABOUT` in the pool, the others none, so their tails are unknown).
+
+| Type | Name | Type | Name |
+|---|---|---|---|
+| 1 | `ROUNDABOUT` | 12 | `STF` |
+| 2 | `SIMPLE_ROUNDABOUT` | 13 | `SIMPLE_STF` |
+| 3 | `COMPLEX_ROUNDABOUT` | 14 | `COMPLEX_STF` |
+| 4 | `Y_JUNCTION` | 15 | `MOTORWAY_EXIT` |
+| 5 | `T_JUNCTION` | 16 | `OTHER_EXIT` |
+| **6** | **`BIF_SYM_2`** (bifurcation, symmetric, 2 arms) | 17 | `ARRIVAL_DESTIN` (cut) |
+| **7** | **`BIF_SYM_3`** (3 arms) | 18 | `ARRIVAL_NEIGHBOURHOOD` |
+| 8 | `BIF_ASYM_L` | 19 (`0x13`) | `OTHER` |
+| 9 | `BIF_ASYM_R` | 20 (`0x14`) | `STYLIZED_DCW_JUNC` (cut) |
+| 10 | `SQUARE` | 21 | `NORMAL` |
+| 11 | `PARKING_PLACE` | 22 | `RDAB_EXIT` |
+
+Consequences:
+- The `gd_bjl` pass of section 13 turns a node-value-2 cluster of 2 arms into **`BIF_SYM_2`** and of 3 arms into
+  **`BIF_SYM_3`**. That confirms the "fork / merge" reading independently of the data check.
+- The segment-level junction type of the S4 record (`+0x11 & 0x0F`, 2 = rare, 6 = common) is a **different
+  field** from this JD type; the match of numbers (6 = `BIF_SYM_2`) is a coincidence of two enums, not shown to be
+  the same. Section 11's guess "2 = `SIMPLE_ROUNDABOUT`" stays unverified: the S4 type 2 and the JD type 2 are not
+  proven to share a table, but the roundabout data (88-89% of S4 type 2 on `junction=roundabout`) fits it.
+- **The S4 segment junction types 2, 5, 6 are kinds of whole roundabouts** (data, `examples/06_osm_vs_disc_modugno`;
+  segments joined through shared nodes, rings of types 2 / 5 / 6 only): 189 rings on 21708 and 260 on 21734, **none
+  mixes types**. `gd_bjl` tests the segment type against 5, 6, 7 together (`0xb300`, `0xb480`, `0xb554`, `0xb718`) and 9
+  and 2 separately, i.e. it treats 5 / 6 as one family. Ring length (sum of segment lengths): type 5 is the small
+  one, 32 of 34 (21708) and 61 of 63 (21734) rings are at most 66 m (median 55 / 53 m); type 6 is larger, 141 of 145 and
+  182 of 186 rings are above 66 m (median 102 / 106 m); type 2 has 10 / 11 rings of 4-8 segments, median 173 / 169 m,
+  which overlaps type 6, and **what separates 2 from 6 is not found** (one segment per ring node, all nodes of degree
+  3-4, no `sub`, `+0x10` bit 7 or class difference). So 5 = small roundabout (about 20 m diameter or less), 6 = ordinary
+  roundabout, 2 = a third kind; a link to the JD names `ROUNDABOUT` / `SIMPLE_ROUNDABOUT` / `COMPLEX_ROUNDABOUT`
+  (types 1-3) is **not shown**: the segment enum has no value 1 on the discs. Verdict: 5 vs 6 by size = hint (n = 34 + 145,
+  63 + 186, 6 exceptions of 428); 2 = unknown.
+- **Where `gd_bjl` reads segment type 2** (`0x6d20`, `0xbbdc`, `0xdf2c`, `0xdfb4`, `0x10798`, `0x107ac`, `0x10f1c`): the
+  pass after `sub_00e8d8` (`0x10738`-`0x10c98`) that may set the junction type to 5 (`T_JUNCTION`) is **skipped when the
+  junction is already type 1 (`ROUNDABOUT`), 22 (`RDAB_EXIT`), 12 (`STF`) or 10 (`SQUARE`), or when the from segment
+  (`obj+0x1c`) or the to segment (`obj+0x20`) has segment type 2** (`0x10778`-`0x107b4`). So type 2 is treated like the
+  roundabout / square junction kinds, never as an ordinary junction arm; types 5 and 6 are not exempt there. At
+  `0x10f1c` the same test clears a flag byte. This supports "segment type 2 belongs to a roundabout-like object", which
+  the data already show (88-89% on `junction=roundabout`), but it does not say how 2 differs from 6. Verdict: hint.
+- It is not shown that the `gd_bjl` object `+0x10` and the pipe's JD `+4` are the same field; the values 6 / 7 and
+  `0x13` / `0x14` agree with the name table (`OTHER` and `STYLIZED_DCW_JUNC...` are sensible for a refinement pass),
+  which supports it.
+
+## 14. Running `dbq` `sub_00fc28` in an emulator (2026-10-01)
+
+`examples/07_firmware_emulator` loads the RR `dbq` module in Unicorn (MIPS32 BE) and calls the descriptor builder
+of section 6 on real tiles of both discs; see its `README.md` for the harness (what is stubbed, two toolchain traps: the
+3-operand `mult[u] rd, rs, rt` and a Unicorn delay-slot load bug). It is a test of the firmware reading **by execution**,
+on the same code the unit runs but not on a unit.
+
+Results (the first three tiles of the Bari-Modugno study area):
+- **The descriptor matches the field map of sections 6 and 11.2 on 13 bytes for every segment**: 758 of 758 on 21708,
+  1,164 of 1,164 on 21734, no mismatch (`+0x12 +0x13 +0x14 +0x18 +0x19 +0x1A +0x1D +0x24 +0x25 +0x26 +0x29 +0x2A +0x2C`).
+- **Which input bit decides which descriptor byte** (every bit of the S4 record and of both node records flipped, 40
+  segments per disc; the two discs agree except for three rare low bits): `+0x1D` S4 `+0x11` bits 0-3; `+0x1E` S4 `+0x11`
+  bits 4-7 (only when the junction type is set and the high nibble is not 4); `+0x1F` S4 `+0x0B` bits 4-5; `+0x20` class;
+  `+0x21` S4 `+0x1D` **bits 1-3** (three bits; `03-road-network.md` §6.7 names bits 1-2); `+0x22` form; `+0x23` S4 `+0x18`
+  bits 0-1; `+0x27` S4 `+0x0A` bits 0-6; `+0x28` bit 7; `+0x29` S4 `+0x1D` bits 4-6; `+0x2C` `+0x10` bit 7; the bearings
+  `+0x10` / `+0x11` and `+0x16` / `+0x17` from S4 `+0x0E` / `+0x0F` scaled by `0x8ca0 >> 8`; `+0x30` from S4 `+0x1E` /
+  `+0x1F` (the number of sign records, section 17.1); `+0x2f` follows S4 `+0x04` / `+0x05` (the number of points; seen only in the
+  second run of the map, made with the position function stubbed, section 17.3). No S4 bit moves `+0x15`, `+0x1B`, `+0x2D`, `+0x2E`, `+0x31`.
+- **S4 bits that never reach the guidance through `dbq`** (same on both discs): `+0x0B` bits 6-7 (toll), `+0x18` bits 2-7
+  (**including the tunnel flag `0x10`**), `+0x1C` bit 3 (bridge), `+0x1D` bit 0 (house numbers) and bit 7 (built-up, only
+  DB-REL < 21), and the pointer bytes except the shape pointer `+0x04` / `+0x05` (read for the point count, section 17.1). So `gd_bjl` never sees toll, tunnel or bridge from this module; the tunnel flag
+  reaches the route chain through `rpmod` (section 7).
+
+Not covered: the shape decoder is a stub (bytes that follow the geometry would be wrong), the caller's arguments `a2` /
+`a3` (descriptor `+0x1C`, `+0x2B`) are 0, and the junction pass of `gd_bjl` (section 13) is not run yet.
+
+## 15. The planner's edge builders run in the emulator (2026-10-01)
+
+`examples/07_firmware_emulator/rpmod_edge.py` runs both `rpmod` edge builders, `sub_01fd80` (first layout, `(edge, tile)`
+with the S4 offset at `edge + 8`) and `sub_04e02c` (second layout, `(edge, tile, S4 record)`), on the real tiles and
+flips every input bit (`dependencies.py ... rpmod` / `rpmod2`; 40 segments per disc, both discs agree except one rare
+node bit). Evidence level: **executed** (same code as the unit, not on a unit). Every row below was also found by reading
+in sections 2 and 8 except those marked **new**.
+
+| Edge byte, layout 1 / layout 2 | Follows | Notes |
+|---|---|---|
+| `+0x12` / `+0x12`, `+0x13` | S4 `+0x0C`, `+0x0D` | length |
+| `+0x14` / `+0x14` | S4 `+0x11` bits 0-3 | junction type |
+| `+0x15` / `+0x15` | S4 `+0x0B` bits 4-5 | direction |
+| `+0x16` / `+0x16` | S4 `+0x0B` bits 0-3 | form |
+| `+0x17` / `+0x18` | S4 `+0x10` bits 0-3 | class |
+| `+0x18` / `+0x19` | S4 `+0x11` bits 4-7 | junction high nibble |
+| `+0x19` / `+0x1a` | S4 `+0x10` bits 4-6 | class 6 subtype |
+| `+0x1a` / `+0x1b` | S4 `+0x0A` bit 7 | built-up |
+| `+0x1b` / `+0x1c` | S4 `+0x11` bit 2 and `+0x10` bits 0-3 (partial) | closed-to-cars flag (section 2 rule) |
+| **`+0x1d` / `+0x1f` (new)** | S4 `+0x10` bit 7 | **first layout: edge `+0x1d` = bit set; second layout: edge `+0x1f` = bit clear** |
+| `+0x1e` / `+0x20` | S4 `+0x0B` bit 6 | toll |
+| `+0x1f` / `+0x21` | S4 `+0x18` bit 4 | **tunnel flag** (so the planner edge carries it in both layouts) |
+| `+0x20` / `+0x1e` | S4 `+0x1D` bits 4-6 | the 3-bit category |
+| `-` / `+0x17` | S4 `+0x18` bits 0-1 | slip role (layout 2 only) |
+| `+0x26`, `+0x27` / `+0x2c`, `+0x2d` | S4 `+0x0E`, `+0x0F` | bearings |
+| `+0x28`, `+0x29` / `+0x2e`, `+0x2f` | node `+6` bits 0 and 2 | dead end / `& 7` in {4, 5} |
+| `+0x3c`, `+0x3d` / `+0x44`, `+0x45` | node `+6` bits 6-7 | level |
+| `-` / `+0x30`, `+0x31` | node `+6` bits 4-5 (reacts on 5 of 40 segments) | the edge-node flag of section 12 (bits 5-4 == 2) |
+| `-` / `+0x32`, `+0x33` | node `+6` bit 2 (and bit 1) | `& 7` in {4, 5} (section 12) |
+| `+0x43..+0x5d` / similar | S4 `+0x12`, `+0x13` | a pointer into the turn section (counts and offsets), many bytes |
+
+**S4 bits that neither builder reads** (both discs, 40 segments each; "builder" here means only these two functions,
+the planner may read other bytes elsewhere): `+0x04`..`+0x09`, `+0x14`..`+0x17`, `+0x19`..`+0x1C` (the whole `+0x1C`),
+`+0x1E`, `+0x1F`, `+0x0A` bits 0-6 (**speed**), `+0x0B` bit 7, `+0x1D` bits 0-3 and 7, `+0x18` bits 5-7 (and 2-3).
+In particular **the planner's edge does not carry the speed category, the width / lane category (`+0x1D` bits 1-3), the
+bridge bit or the house-number bit**; speed would have to be read by another function.
+
+What this changes in the earlier text:
+- Section 8, "has no `+0x10` bit 7": wrong, corrected there. Both edge layouts carry the bit, one as `set`, one as
+  `clear`. Whether any cost or ordering code reads those edge bytes was **not** traced (the routine at `0x3cffc` reads
+  `+0x1d` of layout 2, the level flag, not `+0x1f`).
+- The tunnel flag is in the planner's edge (`+0x1f` / `+0x21`), not only in the chain record.
+
+## 16. `gd_bjl` item creation in the emulator (2026-10-01)
+
+`examples/07_firmware_emulator/gd_bjl.py` runs the descriptor case of the `gd_bjl` message handler (`sub_002238`,
+`0x23f8`-`0x2838`) with a hand-built stack frame: descriptor at `sp + 0x2c`, junction object at `sp + 0xd4`, parser state
+zero. Around it, the harness gives the module its context: `gp[-0x7a80]` points to a context whose `+0x108` is a free list
+of `0x74`-byte items linked through `+0` (**read** from `sub_004dd0`, the allocator), and the OS-service gateway
+`gp[-0x5df0]` (the trampoline set of this module; id `0x78` is a memset, **hypothesis** from its arguments). The
+descriptors are those of the `dbq` emulator (section 14), so the chain is **S4 record -> `dbq` descriptor -> `gd_bjl`
+item, executed**.
+
+Result (**executed**, 549 items on 21708 and 959 on 21734, no mismatch): the item bytes `+0x1d +0x1e +0x1f +0x20 +0x21
++0x22 +0x24 +0x5c +0x5d +0x5e +0x5f +0x60 +0x61 +0x62 +0x63 +0x65 +0x66` follow the descriptor as read in sections 9 and
+13. In particular **item `+0x1e` / `+0x1f` (the node value 2 flags of section 13) equal `descriptor +0x13 / +0x19 == 2`**.
+Correction of a reading: item `+0x24` is `1` when descriptor `+0x2a` is **0**, i.e. when S4 `+0x1C` bit 7 is **set**
+(the copy at `0x247c`-`0x248c` is a branch-likely, whose delay slot runs only when the branch is taken; the first reading
+had it the other way round). Item `+0x14` = length (descriptor `+0x0c` / 100), `+0x2c` / `+0x2e` = the bearings / 100
+(`0x2468`-`0x24ec`).
+
+Not run, and so still **read** only: the junction passes `sub_00e8d8` (section 13), the refinement pass (13.2) and
+`sub_00fbd4`. They need the junction object (`+0x10` type, `+0x1c` / `+0x20` end segments, `+0x24` list, `+0x38..+0x48`
+positions) and item positions; the positions come with other messages of the `dbq` output stream (`dbq` emits more
+buffers than the descriptor), whose format is not decoded yet. That is the next step.
+
+## 17. The `dbq` stream, the positions and the `gd_bjl` junction pass in the emulator (2026-10-02)
+
+Evidence levels as in `examples/07_firmware_emulator/README.md`: **executed** (the module code ran on real tiles),
+**read** (listing only), **hypothesis**. The harness stubs several library functions (listed in 17.5), so every
+**executed** result below holds for the module code with those stubs and with the hand-built objects of 17.4.
+
+### 17.1 The `dbq` output stream (executed)
+
+For one segment `sub_00fc28` writes, through `sub_003b38`, a **concatenation of fixed-size records** (no framing in the
+stream itself; `sub_003b38` appends to a `0x400`-byte buffer and flushes it with `sub_003248(0x1f3)` when full, **read**):
+
+| Part | Size | Count | Content |
+|---|---|---|---|
+| descriptor | `0x34` | 1 | section 6 |
+| text records | `0x50` | descriptor `+0x2e` | a NUL-terminated text of up to `0x4c` bytes, then four bytes `05 00 00 k`; `k` = 1 for the street name, 2 for a route number (`strada comunale macchia di binetto` / `a14` on three tiles of 21708: 305 and 173 records, no other trailer). Only emitted when the request struct (`a1`) has a non-zero `s16` at `+4`; the other `a1` fields had no effect on the segment tested |
+| points | 8 | descriptor `+0x2f` | `(x, y)` as two big-endian `s32` in CARIN units: the start node, the shape points, the end node (5 points for a segment with 3 shape points) |
+| sign records | `0xe5` | descriptor `+0x30` | **read** only (`0x105b8`-`0x10670`): destination text, route-number text, a flag byte at `+0xe4` (1 or 2); matches the signpost entries of `03-road-network.md` §6 |
+
+Descriptor bytes found by running with different arguments (**executed**): `+0x2d` = the stack argument 5 of the call
+(a flag the callers set from a list search), `+0x2b` = `a3`, `+0x1c` = `a2`, `+0x2e` / `+0x2f` / `+0x30` = the counts above.
+(Section 14's map listed `+0x30` as following S4 `+0x1E` / `+0x1F`; that map was made with the position function stubbed
+out, which is why `+0x2f` was missing from it; the count of sign records follows the signpost pointer, which fits.)
+
+### 17.2 The reader in `gd_bjl` (executed)
+
+`sub_013b0c(dst, n)` reads `n` bytes from a buffered stream: buffer at `gp - 0x64d4`, position `gp[-0x64e4]`, valid length
+`gp[-0x64e0]` (`s16`); an empty buffer calls `sub_013974` (a pipe read, a `syscall`; the harness answers every syscall with 0).
+Preloading those three globals with the stream and calling `sub_014240(descriptor out, &names, &points, &signs)` makes the
+module split the stream itself: it consumed all 172 bytes of a segment with a name and 5 points and returned the three
+arrays. `GdBjlEmu.feed_segment` then runs the item creation (`0x23f8`-`0x2838`) with those pointers.
+
+### 17.3 Positions (executed, with a stubbed library function)
+
+The functions that turn node `(u, v)` into a position are reached through `gp[-0x7ce4]` and are not in the module (the
+loader binds them). The harness stands in with `out = origin + (u, v) << 6`, the origin read at `tile + T[5] + T[0x11]`
+(the tile frame of the parser: checked to be `(x0, y0)` on a tile of 21708). **Hypothesis**: that is what the real function
+does; the points it produces were not compared with the parser's coordinates one by one.
+
+### 17.4 `gd_bjl` objects (item creation executed, the rest **read**)
+
+- `gp[-0x7a80]` points to a context with free lists at `+0x104` (junction objects, `0x80` bytes, `sub_004d18`), `+0x108`
+  (items, `0x74`, `sub_004dd0`), `+0x10c` (point cells of 12 bytes: next, x, y, `sub_004e6c`), `+0x110`...`+0x118`.
+- **Item** after the creation case (executed): `+0x34` head of the point list, `+0x38` start point, `+0x40` end point
+  (8 bytes each, the first and last point of the stream), `+0x48` centre (set later), `+0x50..+0x5b` the segment id words.
+- **Junction object** `J` (read, assembled by hand): `+0x10` type (byte), `+0x0c` pointer to the centre point, `+0x1c` from
+  item, `+0x20` to item, `+0x24` list of items (**the from item has to head the list**: `sub_00b88c` walks off its end
+  otherwise, executed), `+0x40` mode byte, `+0x54` number of items, `+0x58` / `+0x5c` arm counts per side.
+- `sub_004090(J)` is the whole processing of one junction (calls `sub_00b440`, `sub_005a7c`, `sub_00fbd4`, `sub_003a00`);
+  `sub_005a7c` creates a **new** junction object that carries the result type, so the result is read from the head of the
+  `+0x104` pool when one was made. The real handler builds `J` while following a planned route (state in `gp[-0x66cc]`,
+  `gp[-0x66c8]`, `sub_0067b8` fetching the route chains); **that was not run**.
+
+### 17.5 What was stubbed here
+
+| Slot | Stand-in | Evidence |
+|---|---|---|
+| `gp[-0x7ce4]` | position of a node (above) | hypothesis |
+| `gp[-0x7df8]` | two 8-byte points equal -> 1 | hypothesis from `sub_013470` and `0xe9e4` (a non-zero result means "same point") |
+| `gp[-0x7c48]` | displacement of a point `a2 / 100` m away along bearing `a1 / 100` degrees at the latitude of `a0` | hypothesis (call at `0xa788`) |
+| `gp[-0x7c80]` | `out = point + displacement` | hypothesis (call at `0xa7f0`) |
+| `gp[-0x7c88]` | sign of the cross product (which side is positive is **unknown**, both signs were run) | hypothesis (`0x10108`, `0x10124`) |
+| 14 more empty slots | return 0 (`bind_unbound`) | guess; the list is `GdBjlEmu.unbound` |
+| `gp[-0x7a8c]` | a value no junction has (a zero would match every zero in `sub_004090` and give the special types `0x7c`-`0x80`) | read |
+
+### 17.6 Results
+
+**The types `gd_bjl` can give a junction (read).** The constants stored to the type byte (`+0x10`) in the listing are
+`1` (`ROUNDABOUT`, three places), `5` (`T_JUNCTION`, `0x10c98`), `6` and `7` (`BIF_SYM_2` / `BIF_SYM_3`, three places each:
+`0xeb7c`/`0xeba8`, `0xee04`/`0xee2c`, `0xf030`/`0xf054`), `10`-`12`, `17`, `19`, `21` (`NORMAL`), `22` (`RDAB_EXIT`) and
+`121`-`128` (special codes, set when the junction is at the position `gp[-0x7a8c]`). **Never stored by a constant: 2
+(`SIMPLE_ROUNDABOUT`), 3 (`COMPLEX_ROUNDABOUT`), 4, 8, 9** (a computed store could be missed); those names exist in `vp_man`.
+
+**Node value 2 and the fork types (executed).** `sub_00fbd4` on every node of the Bari-Modugno study area with 3 or 4
+arms, assembled as in 17.4, over every ordered pair (from, to) of arms; "possible" means at least one pair gives
+`BIF_SYM_2` or `BIF_SYM_3`:
+
+| Disc | Node value | Nodes | As on disc | Value forced to 0 |
+|---|---|---|---|---|
+| 21708 | 2 | 25 | 11 possible | 2 possible |
+| 21708 | 0 (one node in twenty) | 666 | 0 possible | - |
+| 21734 | 2 | 22 | 10 possible | 2 possible |
+| 21734 | 0 (one node in twenty) | 786 | 0 possible | - |
+
+So the node flag **makes `BIF_SYM_2/3` possible**: 0 of 1,452 sampled value-0 nodes against 21 of 47 value-2 nodes, and
+forcing the flag to 0 takes 21 of 47 down to 4 of 47. It is **not the only path** (three code sites store 6 / 7, so 4 of 47
+survive) and not sufficient (the other value-2 nodes fail the other tests: arms with a junction type of their own are
+skipped, `item + 0x22 == 2`, the angle filter, ...). The side-of-line sign made no difference.
+
+Two nodes traced by hand (**executed**): the pass writes into `item + 0x30` the angle of each arm relative to the from arm, and
+`sub_00e8d8` counts the flagged arms whose absolute angle is below 60 degrees. Tile `0x4c18252a` node `29276`: arms at
+`180`, `9`, `-12` degrees -> two arms near the from direction -> `BIF_SYM_2`, roles 1 and 2. Tile `0x4c187112` node `8484`: arms at
+`180`, `-179`, `0` -> one arm -> `NORMAL`. So the test is "two or three flagged arms within 60 degrees of straight on" (the from arm itself reads 180 here), slightly
+different from the pairwise 60 degrees of the data check in section 13 (28 of 29 and 26 of 27 nodes), which is a looser test. Section 13's reading
+(2 or 3 flagged arms -> kind 6 or 7) is therefore **executed** for the cases where it fires; why the other value-2 nodes do
+not fire was not traced.
+
+**Roundabouts and the segment junction type (executed).** `sub_00b440` walks the list along ring items (segment type
+`5`, `6` or `7`) and returns 1 when the ring closes. For every ring of the study area (segments of type 2, 5 or 6 joined
+through shared nodes, the whole ring in the list plus one entry arm, from = the entry, to = a ring segment) `sub_004090` gives:
+
+| Ring made of segment type | 21708 | 21734 |
+|---|---|---|
+| 5 | 65 `ROUNDABOUT`, 4 faults | 138 `ROUNDABOUT`, 4 faults |
+| 6 | 510 `ROUNDABOUT`, 11 faults | 643 `ROUNDABOUT`, 11 faults |
+| **2** | **58 `NORMAL`** | **62 `NORMAL`** |
+
+So `gd_bjl` **does not see a ring of segment type 2 as a roundabout**: the ring walker and `sub_005a7c` test types 5, 6, 7
+only, and a type-2 ring ends up as an ordinary junction. This is the first firmware statement about what separates type 2
+from 5 and 6. What type 2 is remains open: the data say large rings (section 13.3, `examples/06_osm_vs_disc_modugno`), the
+firmware says "not a roundabout for guidance". A reading that fits both is a roundabout the guidance should not announce
+(or one handled as a complex junction by `vp_man`); that is a **hypothesis**. The faults are an unbound call in a path of 4 + 11 rings, not
+traced.
+
+**What `gd_man` does with the type (read).** The junction descriptor of message `0x10` takes its `TYPE` (descriptor `+4`)
+from `sub_0193c0(J')` (`gd_man` `0x193c0`-`0x194c4`, called from `sub_018efc` at `0x18f64`). It passes the `gd_bjl` type through
+with these exceptions: type `0x13` (`OTHER`) with a to item and `+0x40` == 5 gives `0x15` (`NORMAL`) when `sub_0194c8` says 1 or 2;
+type 5 (`T_JUNCTION`) with fewer than 4 items in the list gives `0x13`; type `0x14` gives `0x15` in two places; type `0xf` becomes
+`0x10` when the word at `gp[-0x7b94]` is `0xe0` or `0x26` (a country or region code, **hypothesis**). It never writes 2 or 3.
+So the names `SIMPLE_ROUNDABOUT` / `COMPLEX_ROUNDABOUT` are not produced by `gd_bjl` or `gd_man` by a constant; where `vp_man` uses
+them is section 18.
+
+## 18. `vp_man`: what each junction type does, and which types ever arrive (2026-10-02)
+
+### 18.1 The picture dispatcher of `vp_man` (read)
+
+`sub_002310` (`vp_man` `0x2310`...) takes a junction descriptor (JD) and picks the stylisation by `TYPE` (`JD+4`), through a
+22-entry jump table (`0x2530`, first stage) and, for the group that goes through the common preparation, a second one
+(`0x269c`). Names are those of section 13.3.
+
+| JD type | Stage 1 | Stage 2 |
+|---|---|---|
+| 4 `Y_JUNCTION` | `vp75` `sub_002cd8` | - |
+| 5 `T_JUNCTION` | `vp75` `sub_00385c` | - |
+| 6, 7, 8, 9 `BIF_*` | `vp75` `sub_0043e4` | - |
+| 15, 16 `MOTORWAY_EXIT`, `OTHER_EXIT` | `vp75` `sub_004b4c` | - |
+| 20 `STYLIZED_DCW_JUNC` | `sub_00a918`, then `vp75` `sub_005abc` | - |
+| 22 `RDAB_EXIT` | `vp75` `sub_005110` | - |
+| 11, 17, 18 | nothing | - |
+| 1 `ROUNDABOUT` | common preparation: `vp70` `sub_00a468`, `sub_00a918`, `sub_00ad34` | none: no styled picture is made here |
+| 2 `SIMPLE_ROUNDABOUT`, 3 `COMPLEX_ROUNDABOUT` | the same preparation | `sub_00b1f4`, then `vp73` `sub_0072e0` (complex junction styling) |
+| 10, 12, 13, 14, 19 | `sub_00a468`, `sub_00ad34` | `vp73` `sub_0072e0` |
+| 21 `NORMAL` | `sub_00a468`, `sub_00ad34` | `vp73` `sub_00702c` |
+
+(`vp70` = `vp70_prepare_junction.c`, `vp73` = `vp73_styl_complex_junctions.c`, `vp75` = `vp75_styl_simple_junctions.c`, found from the
+source-file strings of `navboot`.) Types 2 and 3 take the same path, so `SIMPLE_` and `COMPLEX_ROUNDABOUT` differ only inside
+the preparation: `sub_00ad34` skips an update of a chain field (`+0xe`, `CONNECT_ANGLE`) for types 3 and 14, the two `COMPLEX_` ones
+(`0xb0cc`-`0xb0e0`, `0xb16c`-`0xb180`; what that update is for was not decoded).
+
+### 18.2 Which types reach `vp_man` (executed, plus a search of the listing)
+
+- **Read.** In `gd_bjl` the junction type is only ever set from constants (section 17.6) and from the two arguments of `sub_003a00`
+  (`0x11`, `0x12`, `0x7c`, `0x7d`); in `gd_man` `sub_0193c0` passes it through. No path writes 2 or 3. In `vp_man` the only
+  stores to `JD+4` are 8, 9 and 16 (`0x4ce8`...), and it has no other source for the type than the pipe message.
+- **Executed** (`gd_man.py`: the `gd_bjl` junction object is copied to the same addresses of a `gd_man` emulator and
+  `sub_0193c0` is run on it). Types sent in the 3-4 arm junctions of the study area, all (from, to) pairs, 5,024 runs on 21708 and
+  5,762 on 21734 (node samples of section 17.6): `5` 393 / 452, `6` 40 / 37, `16` 28 / 24, `19` 21 / 58, `20` 35 / 6, `21` 4,391 / 5,029,
+  `22` 116 / 154, and `1` only on 21734 (2 runs). **Never 2, 3, 4, 7, 8 or 9.** In the 1,476 roundabout entries that ran (633 on 21708, 843 on 21734; every ring of the
+  study area, 30 more faulted): rings of segment type 5 or 6 are sent as `ROUNDABOUT` (1), rings of type 2 as `NORMAL` (21).
+
+So the `vp_man` branches for types 2 and 3 (and 4, 8, 9, and 7 in this sample) are **not reached from the junctions of these discs** by
+what was run; this is a statement about the junctions assembled in section 17.4 and about what the module code can produce, not
+about all possible routes (only junctions with 3 or 4 arms and the rings were run).
+
+### 18.3 What this says about segment junction type 2 (hypothesis on the last step)
+
+A ring of segment type 2 is not a roundabout for `gd_bjl` (section 17.6); it is sent as `NORMAL` (21), which `vp_man` styles with
+`vp73` `sub_00702c`, the **complex junction** styling, while rings of types 5 and 6 are sent as `ROUNDABOUT` and get no styled
+picture from this dispatcher. So the firmware draws a type-2 ring as a complex junction and announces types 5 / 6 as roundabouts.
+That fits the data (type 2 rings are the larger ones, section 13.3, `examples/06_osm_vs_disc_modugno`). **Hypothesis**: that
+`sub_00702c` really draws a ring (its code was not read), and that a map maker would use type 2 for rings that should not get a
+roundabout announcement.
