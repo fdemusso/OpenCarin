@@ -74,7 +74,8 @@ With the reading and decoding of the binary format solved, our focus is shifted 
 
 ### 2. Routable Export Pipeline (GeoPackage / OSRM / Valhalla) 🟠 High
 * ✅ Street level (`0x00`) segments, nodes, geometry, one-ways, turn bans, names and speeds export to GeoPackage, CSV and OSM XML (`scripts/routing/export_routable.py`, [`examples/05_routable_export`](examples/05_routable_export)); `osrm-extract` reads the result and honours the bans. Checked on a CD against OSM and OSRM ([`03-road-network.md`](docs/carindb/03-road-network.md) §6.7).
-* Still open: the coarse levels `0x01`–`0x03`, signposts / toll points / house numbers as layers, Valhalla, a whole-disc export (the export is region-based), and a check on a DVD.
+* ✅ Signposts (S11), the coarse levels `0x01`–`0x03` (each coarse segment resolved to its street path) and the `0x04` house numbers are layers of the same export, decoded on all cores; section 13 entries come as a neutral `marks` layer (they are not toll points on a CD without tolls, [`03-road-network.md`](docs/carindb/03-road-network.md) §6.7).
+* Still open: what the section 13 marks are, Valhalla, a whole-disc export (the export is region-based), and a check on a DVD.
 
 ### 3. OpenStreetMap to CARiN Serializer & ISO Compiler 🟡 Ongoing
 * **Block Serializers**: Generate `0x00`–`0x03` road network tiles from OSM ways and nodes. The units read plain (CF=0) tiles, but a CD needs CF=1 packing to stay under ~700 MB (all-plain `carindb` would be ~509 MB for CD-ID 2952 and ~640 MB for CD-ID 21594, against 322 and 437 MB packed); `encode_type00` and `encode_type0E` exist. Hand-built plain tiles, their coarse parents and a city's POI index already run on a CNI1; the rules they need are in [`03-road-network.md`](docs/carindb/03-road-network.md) §6.7 and [`01-architecture.md`](docs/carindb/01-architecture.md) §4.4.2.
