@@ -1,4 +1,6 @@
 """CF=1 Codec parsers and encoders."""
+from __future__ import annotations
+
 import struct
 from .constants import *
 from .core import Cf1Error, SECTOR, Cf1Context, bits_needed

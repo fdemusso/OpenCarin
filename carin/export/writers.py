@@ -11,11 +11,13 @@ import csv
 import os
 import sqlite3
 import struct
+from typing import List, Optional
 from datetime import datetime, timezone
 from xml.sax.saxutils import quoteattr
 
 from .cost import CostModel
 from .graph import DIR_CLOSED, DIR_FORWARD, DIR_REVERSE, Edge, Graph
+from .levels import CoarseEdge
 
 GPKG_APP_ID = 0x47504B47
 WGS84_WKT = ('GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],'
@@ -50,7 +52,14 @@ def _gpkg_geom(wkb: bytes) -> bytes:
     return b"GP" + bytes([0, 0x01]) + struct.pack("<i", 4326) + wkb
 
 
-def write_gpkg(g: Graph, path: str) -> None:
+def _hn_cols(e: Edge):
+    h = e.house_numbers
+    if h is None:
+        return (None,) * 5
+    return (h.scheme, *(h.left or (None, None)), *(h.right or (None, None)))
+
+
+def write_gpkg(g: Graph, path: str, coarse: Optional[List[CoarseEdge]] = None) -> None:
     if os.path.exists(path):
         os.remove(path)
     db = sqlite3.connect(path)
@@ -72,9 +81,18 @@ def write_gpkg(g: Graph, path: str) -> None:
         u INTEGER, v INTEGER, name TEXT, locality TEXT, road_class INTEGER, subtype INTEGER,
         form INTEGER, oneway TEXT, toll INTEGER, junction INTEGER, junction_hi INTEGER, roundabout INTEGER,
         speed_code INTEGER, speed_kmh INTEGER, built_up INTEGER, slip_role INTEGER,
-        length_m REAL, geom_m REAL, car_ok INTEGER, highway TEXT);
+        length_m REAL, geom_m REAL, car_ok INTEGER, highway TEXT, level INTEGER,
+        hn_scheme INTEGER, hn_left_from INTEGER, hn_left_to INTEGER, hn_right_from INTEGER,
+        hn_right_to INTEGER);
     CREATE TABLE restrictions (fid INTEGER PRIMARY KEY, from_edge INTEGER, to_edge INTEGER,
         via_node INTEGER, flag INTEGER, kind TEXT);
+    CREATE TABLE signposts (fid INTEGER PRIMARY KEY, edge INTEGER, direction TEXT,
+        destination TEXT, route TEXT);
+    CREATE TABLE marks (fid INTEGER PRIMARY KEY, geom BLOB, edge INTEGER, target INTEGER,
+        node INTEGER, flag INTEGER, kind INTEGER, at TEXT);
+    CREATE TABLE coarse_edges (fid INTEGER PRIMARY KEY, geom BLOB, level INTEGER, tile INTEGER,
+        seg_index INTEGER, road_class INTEGER, form INTEGER, oneway TEXT, toll INTEGER,
+        junction INTEGER, speed_code INTEGER, speed_kmh INTEGER, built_up INTEGER, length_m REAL);
     """)
     db.executemany("INSERT INTO gpkg_spatial_ref_sys VALUES (?,?,?,?,?,?)", [
         ("Undefined cartesian SRS", -1, "NONE", -1, "undefined", None),
@@ -89,23 +107,39 @@ def write_gpkg(g: Graph, path: str) -> None:
     db.executemany("INSERT INTO gpkg_contents VALUES (?,?,?,?,?,?,?,?,?,?)", [
         ("nodes", "features", "nodes", "", now, *bx, 4326),
         ("edges", "features", "edges", "", now, *bx, 4326),
-        ("restrictions", "attributes", "restrictions", "", now, None, None, None, None, None)])
+        ("restrictions", "attributes", "restrictions", "", now, None, None, None, None, None),
+        ("signposts", "attributes", "signposts", "", now, None, None, None, None, None),
+        ("marks", "features", "marks", "", now, *bx, 4326),
+        ("coarse_edges", "features", "coarse_edges", "", now, *bx, 4326)])
     db.executemany("INSERT INTO gpkg_geometry_columns VALUES (?,?,?,?,?,?)", [
-        ("nodes", "geom", "POINT", 4326, 0, 0), ("edges", "geom", "LINESTRING", 4326, 0, 0)])
+        ("nodes", "geom", "POINT", 4326, 0, 0), ("edges", "geom", "LINESTRING", 4326, 0, 0),
+        ("marks", "geom", "POINT", 4326, 0, 0), ("coarse_edges", "geom", "LINESTRING", 4326, 0, 0)])
     db.executemany("INSERT INTO nodes VALUES (?,?)",
                    ((n.id, _gpkg_geom(_wkb_point(n.lon, n.lat))) for n in g.nodes))
-    db.executemany("INSERT INTO edges VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+    db.executemany("INSERT INTO edges VALUES (" + ",".join("?" * 30) + ")", (
         (e.id, _gpkg_geom(_wkb_line(e.coords)), e.tile, e.index, e.u, e.v, e.name, e.locality,
          e.road_class, e.subtype, e.form, e.oneway, int(e.toll), e.junction, e.junction_hi, int(e.roundabout),
          e.speed_code, e.speed_kmh, int(e.built_up), e.slip_role, e.length_m, e.geom_m,
-         int(e.car_ok), highway_tag(e)) for e in g.edges))
+         int(e.car_ok), highway_tag(e), e.level, *_hn_cols(e)) for e in g.edges))
+    db.executemany("INSERT INTO signposts VALUES (?,?,?,?,?)", (
+        (i, e.id, s.direction, s.destination, s.route)
+        for i, (e, s) in enumerate((e, s) for e in g.edges for s in e.signposts)))
+    db.executemany("INSERT INTO marks VALUES (?,?,?,?,?,?,?,?)", (
+        (i, _gpkg_geom(_wkb_point(g.nodes[m.node].lon, g.nodes[m.node].lat)), m.edge, m.target,
+         m.node, m.flag, m.kind, "end" if m.node == g.edges[m.edge].v else "start")
+        for i, m in enumerate(g.marks)))
+    db.executemany("INSERT INTO coarse_edges VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+        (c.id, _gpkg_geom(_wkb_line(c.coords)), c.level, c.tile, c.index, c.road_class, c.form,
+         c.oneway, int(c.toll), c.junction, c.speed_code, c.speed_code * 4, int(c.built_up),
+         c.length_m) for c in (coarse or ())))
     db.executemany("INSERT INTO restrictions VALUES (?,?,?,?,?,?)", (
         (i, r.from_edge, r.to_edge, r.via_node, r.flag, r.kind) for i, r in enumerate(g.restrictions)))
     db.commit()
     db.close()
 
 
-def write_csv(g: Graph, prefix: str, model: CostModel | None = None) -> None:
+def write_csv(g: Graph, prefix: str, model: CostModel | None = None,
+              coarse: Optional[List[CoarseEdge]] = None) -> None:
     model = model or CostModel()
     with open(prefix + "_nodes.csv", "w", newline="") as f:
         w = csv.writer(f)
@@ -114,15 +148,35 @@ def write_csv(g: Graph, prefix: str, model: CostModel | None = None) -> None:
     with open(prefix + "_edges.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["id", "u", "v", "oneway", "road_class", "speed_kmh", "length_m", "name",
-                    "highway", "toll", "roundabout", "car_ok", "model_kmh"])
+                    "highway", "toll", "roundabout", "car_ok", "model_kmh", "level", "hn_scheme",
+                    "hn_left_from", "hn_left_to", "hn_right_from", "hn_right_to"])
         w.writerows((e.id, e.u, e.v, e.oneway, e.road_class, e.speed_kmh, f"{e.length_m:.1f}",
                      e.name or "", highway_tag(e), int(e.toll), int(e.roundabout), int(e.car_ok),
-                     f"{model.speed_kmh(e):.1f}")
+                     f"{model.speed_kmh(e):.1f}", e.level, *("" if v is None else v for v in _hn_cols(e)))
                     for e in g.edges)
     with open(prefix + "_restrictions.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["from_edge", "to_edge", "via_node", "flag", "kind"])
         w.writerows((r.from_edge, r.to_edge, r.via_node, r.flag, r.kind) for r in g.restrictions)
+    with open(prefix + "_signposts.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["edge", "direction", "destination", "route"])
+        w.writerows((e.id, s.direction, s.destination or "", s.route or "")
+                    for e in g.edges for s in e.signposts)
+    with open(prefix + "_marks.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["edge", "target", "node", "lon", "lat", "flag", "kind"])
+        w.writerows((m.edge, m.target, m.node, f"{g.nodes[m.node].lon:.7f}", f"{g.nodes[m.node].lat:.7f}",
+                     f"{m.flag:#06x}", m.kind) for m in g.marks)
+    if coarse:
+        with open(prefix + "_coarse_edges.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["id", "level", "tile", "seg_index", "road_class", "oneway", "toll",
+                        "speed_kmh", "length_m", "wkt"])
+            w.writerows((c.id, c.level, c.tile, c.index, c.road_class, c.oneway, int(c.toll),
+                         c.speed_code * 4, f"{c.length_m:.1f}",
+                         "LINESTRING(" + ",".join(f"{x:.7f} {y:.7f}" for x, y in c.coords) + ")")
+                        for c in coarse)
 
 
 def write_osm_xml(g: Graph, path: str, model: CostModel | None = None) -> None:

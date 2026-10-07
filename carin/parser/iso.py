@@ -46,7 +46,7 @@ class IsoImage:
     def _read_pvd(self) -> None:
         self._f.seek(16 * ISO_SECTOR)
         pvd = self._f.read(ISO_SECTOR)
-        if pvd[0] != 1 or pvd[1:6] != b"CD001":
+        if len(pvd) < ISO_SECTOR or pvd[0] != 1 or pvd[1:6] != b"CD001":
             raise ValueError("not an ISO 9660 primary volume descriptor")
         self.volume_id = pvd[40:72].decode("latin-1").strip()
         self.publisher = pvd[318:446].decode("latin-1").strip()
