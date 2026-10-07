@@ -261,22 +261,18 @@ database *schema*.
 0000002C: 0200 0001   BLOCK_ID  -> sector 512, length 1
 00000030: 0000        offset (0)
 00000032: 0000        count  (0)
-00000034: 0063 5FAC   BLOCK_ID  (identical to 0x50)
-00000038: 0926        offset
-0000003A: F69C        count 
-0000003C: 36AF 692D   BLOCK_ID
-00000040: 1756        offset
-00000042: 9F41        count
+00000034: 00635FAC   [u32 coverage areaA left bottom longtituge]
+00000038: 0926F69C   [u32 coverage areaA left bottom latitude]
+0000003C: 36AF692D   [u32 coverage areaA right top longtituge]
+00000040: 17569F41   [u32 coverage areaA right top latitude]
 00000044: 0000 0701   BLOCK_ID  -> sector 7, 1 sector   (type 0x0B, alphabetical index #2)
 00000048: 000C        offset
 0000004A: 0012        count
-0000004C: 021C 0019   BLOCK_ID
-00000050: 0063 5FAC   BLOCK_ID  (identical to 0x34)
-00000054: 0926        offset
-00000056: F69C        count
-00000058: 102D 96F6   BLOCK_ID
-0000005C: 1424        offset
-0000005E: A443        count
+0000004C: 021C 0019   offset/count items map of block on this CD
+00000050: 00635FAC    [u32 coverage areaB left bottom longtituge]
+00000054: 0926F69C    [u32 coverage areaB left bottom latitude]
+00000058: 102D96F6    [u32 coverage areaB right top longtituge]
+0000005C: 1424A443    [u32 coverage areaB right top latitude]
 
 > **FIRMWARE INSIGHT (0x12 ROOT BLOCK)**: 
 > The `SERVICE_DATA` is actually an array of 8-byte structures (`{u32 BLOCK_ID, u16 offset, u16 count}`). This struct layout is defined by a C-struct `GlobalBlockHeader` shared with other directory blocks (like `0x08`).
@@ -294,12 +290,19 @@ database *schema*.
 000000A6: [ u16 section_type, u16 record_size ] * 93   RECORD_SIZE_TABLE -> 0x00A6..0x0219
                               IDs 0x01..0x5A contiguous, then 0x8A, 0x97, 0x9D
 0000021A: 0000 0000 0000 ...  UNKNOWN_PADDING up to 0x03FF (zeros)
+
+> CD-ID 21425 (1. BNL_13_14):
+> There are map of block on CD, ptr here from 0x48:
+0000021C: [u16 block type, u16 align = 0, u32 index_block_type_0x08 | padding=0 (u32), u32 first_block(hyp) bid, , u32 last_block(hyp) bid] * count (from 0x4e) 
 ```
 
 The superblock **spans sectors 0 and 1** (1024 bytes) despite declaring `length = 1`.
 Sector 1 (`0x200`) is the tail of `RECORD_SIZE_TABLE` and has no header of its own.
 **This is the only observed exception to the chaining rule** — when reading the
 root, pass ≥1024 bytes and do NOT truncate to `length*512`.
+
+Note. Rectangular (non-square) coverage areas A and B are absent in my DB-REL 30 (russian). And `coverage areaA` and `coverage areaB` may differ each other, not '(identical to 0x34)', verified on DB-REL 34: CD-ID 21425 (1. BNL_13_14), CD-ID 19629 (NAV_DB_Russia.iso). 
+
 
 ### 3.2 `RECORD_SIZE_TABLE` (verified extract)
 
