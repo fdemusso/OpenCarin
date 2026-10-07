@@ -31,6 +31,38 @@ def polyline_m(coords: List[Tuple[float, float]]) -> float:
 
 
 @dataclass
+class Signpost:
+    destination: Optional[str]
+    route: Optional[str]            # route-number text, e.g. "a2"
+    direction: str                  # "forward" (along the stored direction) | "reverse"
+
+
+@dataclass
+class HouseNumbers:
+    """Per-segment numbers of the linked 0x04 block (03-road-network.md §6.4).
+
+    `left` / `right` are (number at the start node, number at the end node) of the sides of the
+    start -> end direction; `None` = no numbers on that side. Scheme: 0 none, 1 mixed parity,
+    2 odd / even split."""
+    scheme: int
+    left: Optional[Tuple[int, int]]
+    right: Optional[Tuple[int, int]]
+
+
+@dataclass
+class Mark:
+    """Section 13 entry (kind = `flag & 0x0FFF`): the owner segment and a segment at its start or end node."""
+    edge: int
+    target: int
+    node: int
+    flag: int
+
+    @property
+    def kind(self) -> int:
+        return self.flag & 0x0FFF
+
+
+@dataclass
 class Node:
     id: int
     lon: float
@@ -59,6 +91,9 @@ class Edge:
     slip_role: int                  # +0x18 & 3
     length_m: float                 # stored length (+0x0C), falls back to geometry
     geom_m: float                   # length of the decoded polyline
+    signposts: List[Signpost] = field(default_factory=list)
+    house_numbers: Optional[HouseNumbers] = None
+    level: int = 0                  # highest coarse level the road reaches (0 = street only), see levels.py
 
     @property
     def speed_kmh(self) -> int:
@@ -97,6 +132,7 @@ class Graph:
     nodes: List[Node] = field(default_factory=list)
     edges: List[Edge] = field(default_factory=list)
     restrictions: List[Restriction] = field(default_factory=list)
+    marks: List[Mark] = field(default_factory=list)
     stats: Dict[str, int] = field(default_factory=dict)
 
 
@@ -172,11 +208,13 @@ def build_graph(tiles: Iterable[TileData], twin_tolerance_m: float = 2.0) -> Gra
                 toll=bool(e.form_byte & 0x40), junction=e.junction_byte & 0x0F,
                 junction_hi=e.junction_byte >> 4, speed_code=e.speed_byte & 0x1F,
                 built_up=bool(e.speed_byte & 0x80), slip_role=e.slip_byte & 3,
-                length_m=length, geom_m=geom))
-            if e.restrictions:
+                length_m=length, geom_m=geom,
+                signposts=[Signpost(sp.destination, sp.route, "reverse" if sp.flag else "forward")
+                           for sp in e.signposts if sp.destination or sp.route]))
+            if e.restrictions or e.marks:
                 pending.append(e)
 
-    unresolved = 0
+    unresolved = unresolved_marks = 0
     for e in pending:
         eid = edge_of[(e.sector, e.index)]
         for r in e.restrictions:
@@ -189,14 +227,38 @@ def build_graph(tiles: Iterable[TileData], twin_tolerance_m: float = 2.0) -> Gra
             else:
                 kind = "other"
             g.restrictions.append(Restriction(eid, tid, node_id(r.via), r.flag, kind))
+        for m in e.marks:
+            tid = edge_of.get((e.sector, m.target_index)) if m.target_index is not None else None
+            if tid is None or m.node is None:
+                unresolved_marks += 1
+                continue
+            g.marks.append(Mark(eid, tid, node_id(m.node), m.flag))
 
     g.stats = {
         "tiles": len(tiles), "nodes": len(g.nodes), "edges": len(g.edges),
         "restrictions": len(g.restrictions), "restrictions_unresolved": unresolved,
+        "marks": len(g.marks), "marks_unresolved": unresolved_marks,
+        "signposts": sum(len(e.signposts) for e in g.edges),
         "segments_skipped": sum(t.skipped for t in tiles),
         "twin_links": twins, "twin_outside_window": twin_missing, "twin_position_mismatch": twin_far,
     }
     return g
+
+
+def attach_house_numbers(graph: Graph, by_tile: Dict[int, List[dict]]) -> int:
+    """Attach the records of `carin.parser.house_numbers.segment_house_numbers` (one list per street
+    tile sector) to the edges; returns the number of edges that got numbers."""
+    n = 0
+    for e in graph.edges:
+        recs = by_tile.get(e.tile)
+        if not recs or e.index >= len(recs):
+            continue
+        r = recs[e.index]
+        if r["scheme"] and (r["side_a"] or r["side_b"]):
+            e.house_numbers = HouseNumbers(r["scheme"], r["side_a"], r["side_b"])
+            n += 1
+    graph.stats["edges_with_house_numbers"] = n
+    return n
 
 
 def components(graph: Graph) -> List[List[int]]:
