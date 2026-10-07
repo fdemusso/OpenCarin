@@ -616,18 +616,25 @@ and coach stations, 56 colleges and universities, 57 casinos and leisure.
 
 ```
 +0x08 SECTION_DESCRIPTOR[1] = {0x000C, 18}
-+0x0C 18 records of 12 bytes:  ">IHHHH"
-      BLOCK_ID(u32) | key(u16) | offset(u16) | count(u16) | flags(u16)
++0x0C 18 records of 12 bytes:  ">IBBHHH"
+      BLOCK_ID(u32) | letter(u8) | leaf(u8) | offset(u16) | count(u16) | align(u16) = 0
 ```
-Observed `key`: `0x6101 0x6201 0x6301 0x6401 0x6501 0x6601 0x6701 0x6801 0x6901
+Observed `letter`/`leaf` pairs (as u16): `0x6101 0x6201 0x6301 0x6401 0x6501 0x6601 0x6701 0x6801 0x6901
 0x6C01 0x6D01 0x6E01 0xF601 0x6F01 0x7001 0x7201 0x7301 0x7501`
 → high byte = **ISO-8859-1 initial** (`a b c d e f g h i l m n ö o p r s u`),
 low byte = the trie's leaf flag (§4.4.1), 1 in every record, so `0x0B` is a one-level letter
 index: each record points at `count` consecutive country records whose names start with its
 letter. `offset`/`count` index SECTION_0 of the referenced `0x0A` block (stride 8, verified).
-`flags` is 0 in every record of `0x0B`, `0x0D`, `0x0F` and `0x11` on CD-IDs 2952 and 21594
-(electricduck, issue #18; e.g. 288,896 / 288,896 `0x0F` records on CD-ID 2952). No other value
-has been seen; probably reserved. The DVDs are not checked.
+The last u16 is 0 in every record of `0x0B`, `0x0D`, `0x0F` and `0x11` on CD-IDs 2952 and 21594
+(electricduck, issue #18; e.g. 288,896 / 288,896 `0x0F` records on CD-ID 2952) and on DVDs 21708
+and 21734 (all records of the first 400 blocks of each type, 2026-10-07): alignment padding
+(lugovskovp, issue #18).
+
+**Rule for the target block** (lugovskovp, issue #18): `leaf` = 1 → `BLOCK_ID` is a block of the
+type one below the index (`0x0B` → `0x0A`, `0x0D` → `0x0C`, `0x0F` → `0x0E`, `0x11` → `0x10`);
+`leaf` = 0 → a block of the same type, i.e. the search continues one trie level down. Checked on
+DVDs 21708 and 21734 over the same records: 0 exceptions (21708: `0x0D` 31,140 leaf / 2,752
+inner, `0x0F` 1,634,823 / 106, `0x11` 1,636,526 / 55; `0x0B` all 36 leaf).
 
 ### 4.4 `0x0A` — Country Table
 
@@ -706,9 +713,9 @@ code itself, probably from `COUNTRY_ID`. CD-ID 2952 has no code field at all.
 #### 4.4.1 `0x0D`, `0x0F` and `0x11`: name tries
 
 Both are letter tries in the same 12-byte record format as `0x0B` (§4.3):
-`u32 BLOCK_ID | u8 letter | u8 leaf | u16 offset | u16 count | u16 flags (0)`.
-With `leaf` = 0 the record points to the next level (`count` records at `offset` in that
-block, usually a `0x0D`/`0x11` block); with `leaf` = 1 it points to `count` consecutive name
+`u32 BLOCK_ID | u8 letter | u8 leaf | u16 offset | u16 count | u16 align (0)`.
+With `leaf` = 0 the record points to the next level (`count` records at `offset` in a block of
+the same type); with `leaf` = 1 it points to `count` consecutive name
 records in the target block. The letter `@` (0x40) marks the end of a name: `ash@` is the leaf
 for exactly "ash", while `ash` leads on to longer names. A range is split only while it is
 large, so leaves sit at depths 1 to 18. This is how the unit offers only the letters that can
