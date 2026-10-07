@@ -245,7 +245,7 @@ database *schema*.
 00000006: 00 00       COMPRESSION_FLAG=0, UNCOMPRESSED_SIZE=0
 00000008: 0060 0001   SECTION_DESCRIPTOR[0] = { offset 0x0060, count 1 }
 
---- SERVICE_DATA 0x0C .. 0x5F (Array of 8-byte structs: `{u32 BLOCK_ID, u16 offset, u16 count}`) ---
+--- SERVICE_DATA 0x0C .. 0x5F (mostly 8-byte structs `{u32 BLOCK_ID, u16 offset, u16 count}`; see the coverage boxes below) ---
 0000000C: 0000 0801   BLOCK_ID  -> sector 8, 1 sector   (type 0x0B, alphabetical index)
 00000010: 000C        offset (0x0C)
 00000012: 0012        count  (18)
@@ -261,23 +261,24 @@ database *schema*.
 0000002C: 0200 0001   BLOCK_ID  -> sector 512, length 1
 00000030: 0000        offset (0)
 00000032: 0000        count  (0)
-00000034: 00635FAC   [u32 coverage areaA left bottom longtituge]
-00000038: 0926F69C   [u32 coverage areaA left bottom latitude]
-0000003C: 36AF692D   [u32 coverage areaA right top longtituge]
-00000040: 17569F41   [u32 coverage areaA right top latitude]
+00000034: 0063 5FAC   COVERAGE_A  SW longitude  \  bounding box in CARiN units
+00000038: 0926 F69C               SW latitude    |  (X = (lon+30)·2e9/360, Y = lat·2e9/360):
+0000003C: 36AF 692D               NE longitude   |  -28.83..135.14 E, 27.64..70.48 N
+00000040: 1756 9F41               NE latitude   /
 00000044: 0000 0701   BLOCK_ID  -> sector 7, 1 sector   (type 0x0B, alphabetical index #2)
 00000048: 000C        offset
 0000004A: 0012        count
-0000004C: 021C 0019   offset/count items map of block on this CD
-00000050: 00635FAC    [u32 coverage areaB left bottom longtituge]
-00000054: 0926F69C    [u32 coverage areaB left bottom latitude]
-00000058: 102D96F6    [u32 coverage areaB right top longtituge]
-0000005C: 1424A443    [u32 coverage areaB right top latitude]
+0000004C: 021C        BLOCK_MAP offset (0x21C)
+0000004E: 0019        BLOCK_MAP count  (25)
+00000050: 0063 5FAC   COVERAGE_B  SW longitude  \  -28.83..18.86 E, 27.64..60.83 N
+00000054: 0926 F69C               SW latitude    |  (same SW corner as A here, different NE)
+00000058: 102D 96F6               NE longitude   |
+0000005C: 1424 A443               NE latitude   /
 
 > **FIRMWARE INSIGHT (0x12 ROOT BLOCK)**: 
 > The `SERVICE_DATA` is actually an array of 8-byte structures (`{u32 BLOCK_ID, u16 offset, u16 count}`). This struct layout is defined by a C-struct `GlobalBlockHeader` shared with other directory blocks (like `0x08`).
 > The routing engine (`rpmod.asm:01b122` and clones in `dbq`, `dbpa`, `pbp`) accesses this block **exclusively** to read the `DB-REL` and the Record Size Table (RST). It reads `DB-REL` via a hardcoded offset at `+0x1A`. It reads the RST offset/count at `+0x28` / `+0x2A`. 
-> All other fields in this array (e.g. `+0x1C`, `+0x24`, `+0x2C..+0x5F`) are **DEAD DATA** (ignored compiler artifacts from the shared struct) and are never read by the query engine.
+> All other fields in this array (e.g. `+0x1C`, `+0x24`, `+0x2C..+0x5F`) are never read by the query engine. They are not empty, though: `+0x34` and `+0x50` hold two coverage boxes and `+0x4C` points to the `BLOCK_MAP` (see below), so the 8-byte struct reading does not hold for `+0x34..+0x43` and `+0x4C..+0x5F`.
 > Furthermore, `rpmod` adds the `+0x28` offset (`0x00A6`) directly to the base pointer, completely **bypassing** `SECTION_0` at `+0x60`. `SECTION_0` and the `BLOCK_TYPE_LIST` are not parsed by the routing engine's RST override logic.
 
 --- SECTION_0 @ 0x0060 (1 record, variable length) ---
@@ -289,20 +290,35 @@ database *schema*.
 000000A4: 0000        terminator / padding (u16)
 000000A6: [ u16 section_type, u16 record_size ] * 93   RECORD_SIZE_TABLE -> 0x00A6..0x0219
                               IDs 0x01..0x5A contiguous, then 0x8A, 0x97, 0x9D
-0000021A: 0000 0000 0000 ...  UNKNOWN_PADDING up to 0x03FF (zeros)
-
-> CD-ID 21425 (1. BNL_13_14):
-> There are map of block on CD, ptr here from 0x48:
-0000021C: [u16 block type, u16 align = 0, u32 index_block_type_0x08 | padding=0 (u32), u32 first_block(hyp) bid, , u32 last_block(hyp) bid] * count (from 0x4e) 
+0000021A: 0000        padding (u16)
+0000021C: [ u16 block_type, u16 0, u32 index BLOCK_ID, u32 first BLOCK_ID, u32 last BLOCK_ID ] * 25
+                              BLOCK_MAP -> 0x021C..0x03AB (offset/count at +0x4C)
+000003AC: 0000 0000 ...       zeros up to 0x03FF
 ```
 
 The superblock **spans sectors 0 and 1** (1024 bytes) despite declaring `length = 1`.
-Sector 1 (`0x200`) is the tail of `RECORD_SIZE_TABLE` and has no header of its own.
-**This is the only observed exception to the chaining rule** — when reading the
-root, pass ≥1024 bytes and do NOT truncate to `length*512`.
+Sector 1 (`0x200`) is the tail of `RECORD_SIZE_TABLE` and the `BLOCK_MAP`, and has no header
+of its own. **This is the only observed exception to the chaining rule** — when reading the
+root, pass ≥1024 bytes and do NOT truncate to `length*512`. The `BLOCK_MAP` entry for type
+`0x12` gives the root as `0x00000002` (sector 0, length 2), which matches.
 
-Note. Rectangular (non-square) coverage areas A and B are absent in my DB-REL 30 (russian). And `coverage areaA` and `coverage areaB` may differ each other, not '(identical to 0x34)', verified on DB-REL 34: CD-ID 21425 (1. BNL_13_14), CD-ID 19629 (NAV_DB_Russia.iso). 
+**Coverage boxes and block map** (PR #37, lugovskovp; checked on DVDs 21708 and 21734,
+2026-10-07). `+0x34` and `+0x50` are not BLOCK_IDs but two bounding boxes, `u32` SW lon,
+SW lat, NE lon, NE lat in CARiN units. Values above are DVD 21708; on DVD 21734 box A ends at
+149.99 E and box B at 18.86 E, same SW corner. The two boxes are not always equal: they differ
+on both DVDs and on CD-ID 21425 (BNL_13_14) and CD-ID 19629 (Russia); on lugovskovp's DB-REL 30
+Russian disc they are absent. What the firmware uses them for is not traced.
 
+`BLOCK_MAP` has one 16-byte entry per block type present on the disc (25 on both DVDs, every
+pointer checked against the type of the block it names):
+
+| Offset | Size | Field |
+|---|---|---|
+| `+0x00` | u16 | block type |
+| `+0x02` | u16 | 0 |
+| `+0x04` | u32 | BLOCK_ID of the type's `0x08` spatial index (types `0x00`–`0x03`, `0x06`, `0x14`–`0x16`, `0x1C`–`0x1E`), else 0 |
+| `+0x08` | u32 | BLOCK_ID of the first block of that type |
+| `+0x0C` | u32 | BLOCK_ID of the last block of that type |
 
 ### 3.2 `RECORD_SIZE_TABLE` (verified extract)
 
@@ -508,11 +524,36 @@ class Superblock:
 
 ### 4.1 `0x13` — CD Info (sector 2, zlib)
 
-Decompressed to 1024 bytes. After the header: a 2-section descriptor
-`{0x0010, 1}`, `{0x001C, 1}`, then a 12-byte record, then ASCII text delimited by `0x00`:
+Decompressed to 1024 bytes (header included). Two sections of one record each, then the
+strings. Layout from Tintom1 on a 2007 BeNeLux CD (DB-REL 34, issue #19), the same on DVDs
+21708 and 21734 (checked 2026-10-07; only the text length differs: 506, 589, 608 bytes):
+
+| Offset | Size | Content |
+|---|---|---|
+| `0x00` | 8 | block header |
+| `0x08` | 8 | section descriptors `{0x0010, 1}`, `{0x001C, 1}` as `{offset, count}` |
+| `0x10` | 12 | section 0: six u16 |
+| `0x1C` | 28 | section 1: 16 bytes, then six u16 |
+| `0x38` | 9 | `"no label\0"` |
+| `0x41` | 15 | `"no description\0"` |
+| `0x50` | n | build-info text, NUL-terminated, then zeros up to 1024 |
+
+Section 0, e.g. `0001 0022 0038 0009 0041 000f`: `1`, DB-REL (34), then offset and length
+(NUL included) of the two strings. The `1` and the DB-REL are the `offset` and `count` of the
+root block's service record for this block (`+0x18` / `+0x1A`, §3.1).
+
+Section 1: 16 bytes, then `1`, `1`, DB-REL, offset of the build-info text (`0x50`), its length
+including the NUL, `0`. The 16 bytes are `06 9F 6B C7 0D 3E D7 8E 13 DE 43 55 1A 7D AF 1C` on
+all three discs above: as four u32 they are 111,111,111 × 1..4 (lugovskovp, issue #19; also
+seen on a DB-REL 30 disc). Read as CARiN coordinates the same values are exactly the box
+10° W..30° E, 40..80° N, since 111,111,111 units are 20°. Which reading is meant is open. They
+are not a hash of the text (MD5, SHA-1, SHA-256 and CRC32 tried). There is no build date in the
+records; the date is only in the text (`conversion date: 20070726-1557`). The record sizes are
+not stored; they follow from the offsets.
+
+Start of the build-info text on DVD 21708:
 
 ```
-"no label\0no description\0"
 "\n1.  name:      eur_hw_her_bmw_14q4_20150721a_w.\n"
 "2.  content:    europe (europe)\n"
 "3.  oem:        bmw\n"
@@ -530,8 +571,8 @@ Decompressed to 1024 bytes. After the header: a 2-section descriptor
             4 x i32 root square F1198000 BC7A5000 51198000 1C7A5000 (same in all 11 layers)
             4 x u16 layer parameters (meaning unknown)
       0x164: 16 bytes UNKNOWN
-+0x174 SECTION_0: 40 records of 6 bytes   -> ">HHH" (country_id, seq_id, 0)
-                  seq_id = 0x0734..0x075B, consecutive
++0x174 SECTION_0: 40 records of 6 bytes   -> ">HHH" (category, name offset, 0)
+                  the POI categories present on the disc, ascending (see below)
 +0x264 SECTION_1: 13 records of 20 bytes  -> ">IHHHHHHHH"
                   one per TMC location table: BLOCK_ID of its 0x18 index block, table,
                   first location code, …, COUNTRY_ID (§4.7)
@@ -549,6 +590,28 @@ Decompressed to 1024 bytes. After the header: a 2-section descriptor
 > `0x08` grid, the root square, and the layer's parameters. See `02-geo.md` §7.3 (checked on
 > every record of DVDs 21708 and 21734 by `scripts/geo/check_spatial_index.py`, 2026-09-29).
 
+**SECTION_0 is the POI category list** (electricduck on CD-IDs 2952 and 21594, issue #24;
+DVDs 21708 and 21734 checked 2026-10-07). Each record is `u16` category code (the code of the
+`0x06` record `+0x0A` and of the `0x0C` section 3 ranges), `u16` offset of its name, `u16` 0.
+On all four discs every name is empty (the offsets point at consecutive NUL bytes, `0x734`..
+`0x75B` on the DVDs), so the unit must take category names from its own language files. The
+earlier reading `(country_id, seq_id, 0)` was these two fields. On both CDs the list is exactly
+the categories used by the disc's POIs and city ranges, no more, no less:
+
+| Disc | Records | Codes |
+|---|---|---|
+| CD-ID 2952 | 29 | 12–16, 20–22, 24, 31, 32, 35, 37–41, 43, 47–54, 56, 57, 61 |
+| CD-ID 21594 | 44 | 11–16, 20–26, 29–33, 35–59 (except 34), 61 |
+| DVD 21708 | 40 | 12–16, 20–22, 24–26, 29–32, 35, 37–45, 47–61 |
+| DVD 21734 | 40 | as 21708, but 28 instead of 48 at position 26 (so not ascending there) |
+
+On the DVDs it is not checked whether the list matches the codes used. Names for some codes,
+from the POIs filed under them (CD-ID 21594, read on a CNI1): 12 petrol stations, 13 car rental,
+14 parking, 16 motorway services, 21 hotels, 22 restaurants, 31 tourist information, 32 museums,
+35 sports centres, 37 landmarks, 39 parks, 41 hospitals, 47 shopping, 48 towns (city centres),
+49 theatres and cinemas, 50 golf, 51 railway stations, 52 airports, 53 ferry terminals, 54 bus
+and coach stations, 56 colleges and universities, 57 casinos and leisure.
+
 ### 4.3 `0x0B` — Alphabetical Index (sectors 7 and 8, 1 sector each)
 
 ```
@@ -559,8 +622,12 @@ Decompressed to 1024 bytes. After the header: a 2-section descriptor
 Observed `key`: `0x6101 0x6201 0x6301 0x6401 0x6501 0x6601 0x6701 0x6801 0x6901
 0x6C01 0x6D01 0x6E01 0xF601 0x6F01 0x7001 0x7201 0x7301 0x7501`
 → high byte = **ISO-8859-1 initial** (`a b c d e f g h i l m n ö o p r s u`),
-low byte = prefix length (1). `offset`/`count` index SECTION_0 of the referenced
-`0x0A` block (stride 8, verified).
+low byte = the trie's leaf flag (§4.4.1), 1 in every record, so `0x0B` is a one-level letter
+index: each record points at `count` consecutive country records whose names start with its
+letter. `offset`/`count` index SECTION_0 of the referenced `0x0A` block (stride 8, verified).
+`flags` is 0 in every record of `0x0B`, `0x0D`, `0x0F` and `0x11` on CD-IDs 2952 and 21594
+(electricduck, issue #18; e.g. 288,896 / 288,896 `0x0F` records on CD-ID 2952). No other value
+has been seen; probably reserved. The DVDs are not checked.
 
 ### 4.4 `0x0A` — Country Table
 
@@ -597,9 +664,10 @@ The `0x0B` block indexes S0 by initial letter (§4.3).
  0x04   2                 offset in that block       it is this BLOCK_ID, offset and count)
  0x06   2                 count: the root of the country's city-name trie (see below), one
                           entry per initial letter
- 0x08  16   four u32: 11, 22, 33, 44 on DB-REL 34; 111,111,111 × 1..4 on CD-ID 2952.
-            The same 16 bytes are in the 0x13 build-info block. A placeholder or format
-            signature, not country data
+ 0x08  16   four u32: 11, 22, 33, 44 on DB-REL 34; 111,111,111 × 1..4 on CD-ID 2952
+            (0 on `europe`). A placeholder or format signature, not country data. The 0x13
+            block has a similar 16 bytes, but there they are 111,111,111 × 1..4 also on the
+            DB-REL 34 DVDs (§4.1)
  0x18   2   S3_OFFSET     offset of the country's first S3 record (0 = none)
  0x1A   2   S3_COUNT
  0x1C   8   4 × u16: 500, 300, 1000, 500 for every country on every disc, 0 for `europe`.
@@ -614,7 +682,9 @@ The `0x0B` block indexes S0 by initial letter (§4.3).
  0x2A   2   FLAGS2        4 on most countries without S3 entries (eastern Europe, the Nordics),
                           2 on `europe`, else 0
  --- DB-REL 34 only ---
- 0x2C   2   COVERAGE      3 full, 1 reduced (by, md, al; ua and gi on DVD 21708 only), 0 `europe`
+ 0x2C   2   COVERAGE      3 full, 1 reduced (by, md, al; ua and gi on DVD 21708 only), 0 `europe`.
+                          On a 2007 BeNeLux CD (Tintom1, issue #26): 2 on 20 countries, 0 on
+                          gi, ie and lu; what 2 means is not known
  0x2E   2   ISO_CC        ISO 3166-1 alpha-2 ("de", "at", "ie", "gb", "me")
  0x30   2   0
  0x32   2   REGION        "eu" on the DVDs, "--" on CD-ID 21594
