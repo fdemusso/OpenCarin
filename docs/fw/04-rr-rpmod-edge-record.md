@@ -108,10 +108,31 @@ it is not on `NAV_SW(v32).iso`.
 ## 4. Open
 
 1. ~~The `+0x18` pass of packed `0x00` tiles~~ Done 2026-09-28 (pass `0x1B`, `04-cf1-codec.md` §9.11.12).
-2. The cost function: which edge fields feed the route cost (speed `+0x0A` bits 0–4 is not read
-   by either unpacker; look for readers of `+0x0A & 0x1F`).
+2. The cost function: which edge fields feed the route cost. **Narrowed 2026-10-09 (§19):** an
+   exhaustive scan of every `rpmod` instruction masking a byte with `0x1F`, and of every
+   non-stack-pointer byte load from offset `+0x0A`, found no code that reads S4 `+0x0A` bits 0–4
+   anywhere in `rpmod` (nor in the two CF1 record-tag dispatchers that also contain `& 0x1F` masks,
+   `rr_dbd`/`rr_db_bh_read`, which mask an unrelated tag byte — §19.1). **Extended 2026-10-09 (§20.5):**
+   the same `+0x0A` byte-load search, run on all seven sibling RR modules, also finds zero hits — no RR
+   module reads S4 `+0x0A` through literal-immediate addressing anywhere. **Turn restrictions found
+   2026-10-09 (§20.3):** the S10 forbidden-turn list's reader (`sub_047990`, exact-match against the
+   per-edge list) and the one-way field's value decode (`sub_04e914`/`sub_04e9ac`: `+0x15` 0 = two-way,
+   1/2 = one-way each direction, 3 = closed) are now identified and read in full — this answers "how
+   turn restrictions apply", gated together with a junction-type compatibility check. Still open: the
+   numeric cost/distance half — no `mult`/`div` or running-total pattern found anywhere in the
+   traversal cluster that reads these gates (§20.3-§20.4); whether it lives in a different RR module
+   remains open, though `rr_dbq`'s ~27 non-`$fp`-biased indirect calls (§20.5) were not traced far
+   enough to confirm or rule that out.
 3. Callers of `sub_01fd80` / `sub_04e02c`: which structure lists edges, and how the S6 twin and
-   S8 level links are followed (tile crossing and level switching).
+   S8 level links are followed (tile crossing and level switching). **Narrowed 2026-10-09 (§19.2):**
+   both known callers (`sub_01d2e8` at `0x1d4d4`, `sub_01dcd8` at `0x1dfe8`) are map-matching /
+   position-tracking routines, not the route search. **Found 2026-10-09 (§20.1-§20.2):** `sub_04e02c`
+   (the sibling unpacker) has its own caller chain, `sub_04e56c`, reached from 5 further functions; it
+   is a forward-link traversal primitive that follows the S4 `+0x06`/`+0x08` next-segment links across
+   tile boundaries via a block-resolution helper (`sub_04ffb0`) — a strong candidate for the tile-
+   crossing mechanism this item asks for, though not yet confirmed to touch a documented S6 record.
+   One of the two clusters reached through it (`sub_04757c`/`sub_0476f4`) is the turn-feasibility gate
+   of item 2 above; the other (`sub_0043a8`/`sub_03f608`) is a second, separate map-matching consumer.
 4. ~~Meaning of `+0x10` bit 7 and `+0x18 & 0x10`~~ Done 2026-10-01 (UAG / tunnel, §7, §10). Still open: the
    values of the `+0x1D` bits 4-6 category (§8, §9) and node `+6` (not traced).
 5. The `gp[-0x7A30]` per-block-type table (initialised data of `rpmod`).
@@ -871,3 +892,227 @@ picture from this dispatcher. So the firmware draws a type-2 ring as a complex j
 That fits the data (type 2 rings are the larger ones, section 13.3, `examples/06_osm_vs_disc_modugno`). **Hypothesis**: that
 `sub_00702c` really draws a ring (its code was not read), and that a map maker would use type 2 for rings that should not get a
 roundabout announcement.
+
+## 19. Hunting the route cost function from `sub_01fd80`: a negative result (2026-10-09)
+
+Goal (roadmap §6): find the reader(s) of S4 `+0x0A & 0x1F` (speed) and of the edge fields `sub_01fd80`
+emits, and recover the route-cost formula and S10 turn-restriction handling. Method: regenerate the full
+`rpmod` listing (`python scripts/firmware/mips_listing.py build/fw/V_2_RR_0101_BMWC01S_app_sw_bsw2 rpmod
+build/rr_rpmod.asm`, 142,338 instructions / 1,490 functions) and search it exhaustively rather than read
+functions by hand (per the verification rule in memory `feedback-verify-asm-against-real-binary`).
+
+### 19.1 No code masks S4 `+0x0A` with `0x1F` (read, exhaustive)
+
+`grep -n "andi.*0x1f\b" build/rr_rpmod.asm` returns exactly **two** matches in the whole module
+(`0x1db00`, `0x025814`). Both read, in context: they are generic 3-bit bitfield-pack helpers (the
+compact-record packer called from `sub_01d914` and a sibling), clearing the destination byte's top 3
+bits before OR-ing in a shifted field — nothing to do with S4 or speed (confirmed by reading the
+surrounding 15–20 instructions of each: the masked register is the *destination* accumulator of a
+pack operation, not a value loaded from S4 `+0x0A`).
+
+The same grep across every other extracted RR module listing (`rr_dbd.asm`, `rr_db_bh_read.asm`, the
+two `.dbbh.asm` listings, `rr_dbc.asm`, `rr_dbpa.asm`, `rr_db_con.asm`, `rr_db_pub.asm`, `rr_dbq.asm`)
+finds the pattern only in `rr_dbd`/`rr_db_bh_read` (and their `.dbbh` duplicates), three occurrences
+each, all inside one CF1 record-tag dispatch (`0x70a0`-`0x7198`): `andi $t,$t,0x1f` there extracts a
+5-bit record **sub-type** from a tag byte (compared to `0x14`, used to size a jump into `sub_006d68`),
+unrelated to road attributes. `rr_dbq.asm` (91,546 lines, the largest RR module) has **zero** matches.
+
+Separately, every non-stack-pointer byte load from offset `+0x0A` in `rpmod` was enumerated
+(`grep -n ",0xa(\$" build/rr_rpmod.asm`, then excluding `0xa($sp)` hits) and read in context:
+
+| Address | Function | What it does with `+0x0A` |
+|---|---|---|
+| `0x020004`, `0x020094` | `sub_01fd80` (first unpacker) | `andi $t0,$t0,0x80` — the known built-up flag (§2 table), not bits 0-4 |
+| `0x04e374`, `0x04e404` | `sub_04e02c` (second unpacker) | same, `& 0x80` |
+| `0x04a0b0` | `sub_049xxx` | `andi $t0,$t0,0x80` — a third, independent built-up-flag read (DB-REL-gated, mirrors the `+T[0x09]+2` fallback of §2) |
+| `0x012cb8` | struct copy | `lb`/`sb` pair copying bytes 6-9/a-b verbatim to another buffer; no computation |
+| `0x01c1b0` | struct copy | `lbu`+`sb` copying `+0xa` into a new struct's `+0x10`; no computation |
+| `0x04cb84` | `sub_04cb78`-ish | `lbu`; only ever compared to zero (`beql $t0,$zero,...`), a plain existence/non-zero test |
+| `0x0558f0`, `0x065780` | `sub_0558b0`, `sub_0656ac` family | see §19.3 — read from a per-node/global record that is **not** the 32-byte S4 record |
+
+No instance anywhere applies a 5-bit (`0x1F`) or any other mask consistent with isolating "speed
+bits 0-4" to a value coming from S4 `+0x0A`. This is a verified negative result for `rpmod`, not a
+guess: every qualifying instruction in the module was read in context, not inferred from the mask
+constant alone.
+
+### 19.2 Both callers of `sub_01fd80` are map-matching, not route search (read)
+
+The two callers the project already knew about (§2: "`sub_01fd80` has two callers, both route
+builders: `0x1d4d4` (in `sub_01d2e8`) and `0x1dfe8`") turn out, on reading each containing function in
+full, to share a near-identical shape with each other and with a third helper (`sub_068ee0`, called by
+both at the top of the function): a state machine testing a mode value against the sentinels `5`,
+`0x1f7` (503), `0x1fe` (510), driven by coordinates (`$a1`/`$s0`/`$s2`, copied from 16-byte chunks that
+look like a position fix), followed by the `sub_01fd80` call to decode the S4 record under the
+resolved position. In `sub_01dcd8` (the `0x1dfe8` caller) this is immediately followed by a tick-driven
+counter update: a 16-bit global at `gp[-0x7A76]` is added into two running accumulators at `$s1+0x52`
+and `$s1+0x5E`, and subtracted from a countdown at `$s1+0x50` — the shape of a dead-reckoning /
+position-advance-along-segment update, not a path-cost accumulation (no comparison against a
+best-cost array, no priority-queue-like structure, no edge relaxation). `sub_01d2e8` shares the same
+mode dispatch and the same `sub_068ee0` call before unpacking the edge, consistent with "resolve the
+current/target coordinate to an S4 segment" (map matching) rather than graph search.
+
+This means: the roadmap's assumption that the route search reaches edges through `sub_01fd80`'s known
+call sites is **not supported** by what those call sites actually do. Either the search engine decodes
+S4 through a third, still-unfound caller, or `rpmod`'s graph search does not call `sub_01fd80` at all
+and instead reads the S4 fields it needs directly. Not yet checked: a systematic scan for *any*
+instruction loading `+0x02`/`+0x0B`/`+0x0C` (the fields the unpacker also copies) outside `sub_01fd80`/
+`sub_04e02c`, which would show whether such a third path exists.
+
+### 19.3 Two accessor families that read `+0x0A` but are not S4 (read, inconclusive on role)
+
+Two small clusters of functions read a record's `+0x0A` byte without masking it, but neither record
+matches the documented 32-byte S4 layout, so neither is a confirmed speed reader:
+
+- **`sub_0656ac` family** (`sub_0656ac`, `sub_065368`, `sub_0658e0`, `sub_06599c`, and siblings at
+  `0x65924`-`0x066840`, all in one contiguous block of `rpmod`). Each resolves a record through a
+  shared helper `sub_065144(n=1, out)` — which, read in full, always fetches the **first** entry
+  (index 0) of an array found at `BASE + T[0x05]` (`T[0x05]` = descriptor `+0x28` = 8, confirmed against
+  `01-architecture.md`'s own reading of that table), where `BASE` is a block decoded via
+  `sub_07b41c`+`sub_0750c4`+`sub_074ee0` from an ID built out of the caller's own parameter — then reads
+  that record's `+0x04` as two bitfields (a 4-bit field at `+0x05` low nibble and a 6-bit field
+  spanning `+0x04`/`+0x05`) and its `+0x0A` as a plain byte, and compares all three against
+  caller-supplied filter values (`sub_0656ac`, `0x65780`). The documented S4 record has `+0x04`/`+0x05`
+  as a 16-bit point count (§2), not two sub-byte bitfields, so this is a **different, smaller record
+  type** reached through the same generic per-node accessor, not S4. Role not established; the
+  exact-match-on-three-filters shape (vs. iterating to find ANY edge with given class/form/junction
+  attributes) is more consistent with a guidance/junction-branch lookup than with cost computation —
+  **not verified**, flagged as a hypothesis only.
+- **`sub_0558b0` family** (`sub_055434`, `sub_05548c`, `sub_0554d4`, `sub_05551c`, `sub_055564`,
+  `sub_0555ac`, in the range `0x055434`-`0x0555e8`). Each is a one-line predicate: call
+  `sub_0558b0(gp[-0x6408])` (a **global** pointer, not a parameter) and compare the returned
+  `+0x0A` byte to one fixed constant each (`0x5F`, `0x3F`, `0x2F`, `0x1F`, `0x4F`, `0x1F`
+  reappearing as a plain comparison target, not a mask, at `0x055590`). The values share a `& 0xF ==
+  0xF` low nibble with a varying high nibble (1, 2, 3, 4, 5) — a message/category-ID pattern, guarded
+  by a global one-shot flag (`gp[-0x6410]`) set by a call to `sub_05623c` right before. This looks like
+  a voice-guidance or display-message dispatch over a single global "current item" struct, not a
+  per-edge attribute — **not S4, not verified further**.
+
+### 19.4 What this means for the roadmap
+
+Item 6 cannot yet be closed. What changed: the search space for "who reads speed" has been narrowed
+from "unknown" to "not in `rpmod`'s masking code, and not in the two already-known `sub_01fd80`
+callers" (§19.1-§19.2) — a verified negative result, not a guess, that should stop future sessions from
+re-reading those same call sites. The two candidate record families in §19.3 are real leads for *some*
+per-node/per-context lookup mechanism worth understanding, but neither has been shown to be the S4 edge
+record or to feed a cost formula. S10 turn restrictions were not reached by this session's search at
+all (no code path examined references a record sized like S10, `T[0x14]` = 8 bytes, outside the
+already-documented `T[0x05]` = 8 bytes in §19.3, which is a coincidence of size, not evidence of
+identity — the two are read via different table-index constants `0x28` vs `0x46`/`T[0x1C]`). Next
+concrete step: find the *third* caller of `sub_01fd80`/`sub_04e02c` (or confirm there is none, and that
+the planner reads S4 fields directly), since §19.2 shows the two known callers are not it.
+
+## 20. The third-caller cluster: `sub_04e56c` is a traversal/tile-crossing primitive, and it gates turns (2026-10-09, follow-up to §19)
+
+Method: §19.2 scanned only `sub_01fd80`'s two callers. This session traced `sub_04e02c`'s caller
+instead, using the real `$fp`-biased call graph (`lui/addiu $at` + `addu $at,$at,$fp` + `jalr $at`,
+cross-checked against `grep -n "sub_04e02c" build/rr_rpmod.asm`, which independently shows the same
+single call site) rather than the `0x1F`-mask search, and then the real caller(s) of *that* caller —
+this is what finds the third+ callers item 6 asked for.
+
+### 20.1 Call chain: `sub_04e02c` ← `sub_04e56c` ← five functions, none previously known
+
+`sub_04e02c` has exactly **one** direct caller in `rpmod`: `sub_04e56c` at `0x04e798`. `sub_04e56c`
+itself has **nine** call sites across **five** distinct functions — `sub_02b548` (×2), `sub_03f608`
+(×1), `sub_04757c` (×2), `sub_0476f4` (×2), `sub_047df4` (×2) — none of which is `sub_01d2e8` or
+`sub_01dcd8`, the two callers of `sub_01fd80` already ruled out as map-matching in §19.2. This is a
+real, previously undocumented third-caller cluster, reached through the sibling unpacker rather than
+through `sub_01fd80` itself.
+
+### 20.2 `sub_04e56c`: forward-link graph traversal with tile crossing (read in full)
+
+`sub_04e56c(mode, target, rec, out_flag)`: given a decoded S4-record pointer `rec` (`$a2`) and a
+target identity `target` (`$a1`, compared later by its `+0x00`/`+0x04`/`+0x08` triple — the same
+u32/s16/u16 shape as a decoded node address), it repeatedly follows `rec`'s **next-segment-at-start /
+next-segment-at-end** link (the already-documented S4 `+0x06`/`+0x08` correction, §2/§3 history),
+selected by `mode` the same way `sub_04e02c`'s two node-decode calls select `+6`/`+8`, resolves the
+linked record's owning tile through a helper `sub_04ffb0(rec, &base)` — which can fail, cleanly
+propagated as the function's error return — and recomputes the next candidate address from a
+block-descriptor table at `gp[-0x6064]` (the same DB descriptor documented in §1). It stops and returns
+success without unpacking when the walked-to record's identity triple equals `target`'s; otherwise it
+falls through to call `sub_04e02c` on the final resolved record and reports via `out_flag` whether an
+unpack happened. This is a direct match for roadmap item 7's "tile crossing via S6 twins" — not proven
+to *be* that exact mechanism (no S6 record was read here with its documented layout), but a concrete,
+read, forward-link/tile-crossing primitive sitting exactly where that mechanism should live.
+
+### 20.3 `sub_04757c` / `sub_0476f4`: the turn-feasibility gate (read in full, mirror-image pair)
+
+Both functions have the same shape: loop calling `sub_04e56c` to advance from edge `rec` (`$s0`/`$s1`)
+toward a target, then gate the advance with:
+
+- a **junction-type compatibility check** on the two edges' decoded `+0x14` (junction type) and
+  `+0x19`/`+0x1a` (junction high nibble) fields — the exact fields and exact `can_traverse`-style
+  comparison (junction ∈ {3, 4, 5} with nibble tests) already documented in §2's table row for
+  `+0x11`/class, but here applied **between two decoded edges** rather than within one — i.e. this is
+  the junction-transition rule, not the single-edge "open to cars" rule;
+- a call to a local one-way check, `sub_04e914(rec)`: reads decoded `+0x15` (the already-documented
+  "direction restriction" field, §2) as a 4-way computed-jump index and returns, reading the jump
+  table at `0x4e944`-`0x4e950` (`.word 0x24, 0x2c, 0x48, 0x64`, relative to `0x4e930`) and the code at
+  each target: **`+0x15` = 0 → always allowed; 1 → allowed only when the decoded `mode`/direction byte
+  `rec+0xc` is 0; 2 → allowed only when `rec+0xc` is 1; 3 → never allowed.** A second, simpler
+  predicate `sub_04e9ac(rec)` (`+0x15 == 3 → 0, else → 1`) agrees with case 3 and is used as a
+  cheaper pre-check elsewhere. This is the first firmware-read decode of what `+0x15`'s four values
+  actually mean (0 = two-way, 1/2 = one-way in one physical direction each depending on the
+  traversal's own direction byte, 3 = closed) — previously the field was named but its values were
+  not decoded;
+- a call to `sub_047990(rec, target)`: walks the **S10 forbidden-turn list already documented in §2**
+  (`+0x12` → `sub_06322c` → lists at `+0x48`/`+0xA8` [here, `sub_04e02c`'s wider layout, at `+0x50`/
+  `+0xB0`], ≤ 8 × 12 B entries, counts at `+0x48`/`+0x4C`) and returns 1 if `target`'s identity triple
+  (`+0x00`/`+0x04`/`+0x08`) matches any entry — i.e. this is the actual **consumer** of the S10 list:
+  "is this specific transition one of the forbidden turns attached to this edge." §2 had already
+  data-verified the S10 list's existence and shape; this is the first time its reader has been found.
+
+Together these three checks — junction-type compatibility, one-way direction, S10 forbidden-turn
+membership — are read, in the real binary, as the gate a traversal step must pass before `sub_04e56c`
+is allowed to continue past a node. This directly answers roadmap item 6's "how turn restrictions (S10)
+apply": by exact-match lookup against the per-edge list, gated together with the one-way and
+junction-type rules, inside this traversal-step function. **Not yet found: a numeric cost or distance
+accumulator.** No `mult`/`div` instruction and no running-total/best-so-far/priority-queue pattern
+occurs anywhere in `sub_04757c`, `sub_0476f4`, or `sub_04e56c` — these functions decide *whether* a
+transition is legal, not *how much* it costs. Roadmap item 6's cost-function half remains open; only
+its turn-restriction half is now backed by a read consumer.
+
+### 20.4 `sub_0043a8` → `sub_03f608`, `sub_02b548`, `sub_047df4`: a second, separate cluster — map-matching, not search
+
+The other three call sites are a different consumer. `sub_0043a8` has **zero** in-module callers
+(not found by the same `$fp`-bias scan applied to the rest of `rpmod`) — consistent with being a
+module-exported entry point rather than an internal helper — and implements a linked-list walk: for
+each candidate record, decode via `sub_04dfb0` then test via `sub_03f608`; on exhaustion without a
+match it writes the constant `2` into a global status byte and returns. `sub_03f608` (711 instructions,
+read for calls and arithmetic, not line-by-line) resolves a fixed **global** position/identity struct
+through the trivial accessor `sub_048018` (`gp`-relative constant-address returns, e.g. `gp+0x3f28`)
+and compares a candidate's `+0x00`/`+0x04`/`+0x08` triple against it — the same "resolve
+current/target position" shape already characterized as map-matching in §19.2, not a cost search (no
+`mult`/`div` in the whole function either). `sub_02b548` and `sub_047df4` were only skimmed for their
+call/arithmetic lines (not read in full) and also call `sub_04e56c`, `sub_04ef3c`, `sub_04ed88`,
+`sub_04dfb0` — the same small helper family — but have not been read in enough depth to say what they
+do; **unverified, flagged as a lead only.**
+
+### 20.5 Sibling-module field-reader search, extended (negative, exhaustive)
+
+§19.1's literal `+0x0A($reg)` byte-load grep (excluding `$sp`) was run on `rpmod` only. Re-run on all
+seven other extracted RR module listings (`rr_dbc.asm`, `rr_dbpa.asm`, `rr_db_con.asm`,
+`rr_db_pub.asm`, `rr_db_bh_read.asm`, `rr_dbd.asm`, `rr_dbq.asm`, 16,958-91,546 lines each): **zero
+hits in every one.** Combined with the already-known `0x1F`-mask result (also zero outside `rpmod`'s
+two unrelated packers and `rr_dbd`/`rr_db_bh_read`'s unrelated CF1 tag dispatch, §19.1), no RR module
+other than `rpmod` reads a struct's byte offset `+0x0A` through literal-immediate addressing at all.
+This rules out the simplest form of "a sibling module decodes S4 speed directly"; it does not rule out
+register-computed offsets (`base + reg` with the `0xa` held in a register) or data handed to the
+sibling module already decoded by `rpmod`. Separately, `rr_dbq.asm`'s indirect calls were
+characterized by call-target register: 4,098 of 4,304 `jalr`s use the standard `$fp`-biased `$at`
+convention (intra-module, same as `rpmod`); 179 use `$t0`; 27 use saved registers `$s0`-`$s7`, mostly
+clustered in one range (`0x1f990`-`0x25458`) consistent with a single callback/visitor dispatcher —
+**not traced further; not shown to be cross-module linkage into `rpmod`.**
+
+### 20.6 What this means for the roadmap
+
+Item 7 ("tile crossing via S6 twins, callers of `sub_01fd80`/`sub_04e02c`") now has a concrete,
+binary-read candidate: `sub_04e56c`, reached from the turn-feasibility pair `sub_04757c`/`sub_0476f4`.
+Item 6's turn-restriction half ("how turn restrictions (S10) apply") is answered the same way: exact
+membership against the per-edge S10 list (`sub_047990`), gated with a now-decoded one-way field
+(`sub_04e914`/`sub_04e9ac`, `+0x15` values 0-3) and a junction-type compatibility check. Item 6's
+cost-function half is still open: nothing in this cluster accumulates a number. The second cluster
+(`sub_0043a8`/`sub_03f608`) is a second, separate map-matching consumer of the same unpacker and is not
+the search. **None of this has been cross-checked against real S10/`+0x15` disc data yet** (e.g.
+picking a known one-way street or a known forbidden turn on NAV_DB_21708 and confirming the decoded
+values match) — these are firmware-code readings only, per this doc's existing style for §2/§8-§13, and
+should be treated as 🟡 pending that check, not ✅, until someone runs it against a block.

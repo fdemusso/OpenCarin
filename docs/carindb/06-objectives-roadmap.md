@@ -114,9 +114,28 @@ Every block is readable except one group:
 
 ### B. RoadRunner firmware (`bsw2`)
 6. **Route cost**: find the readers of speed (`+0x0A & 0x1F`) and the edge fields from
-   `sub_01fd80`; recover the cost function and how turn restrictions (S10) apply.
+   `sub_01fd80`; recover the cost function and how turn restrictions (S10) apply. **2026-10-09
+   (`fw/04` §19, negative result):** exhaustively verified that no instruction in `rpmod` masks S4
+   `+0x0A` with `0x1F` (only two `& 0x1F` sites exist in the whole module, both unrelated bitfield
+   packers), and that neither of `sub_01fd80`'s two known callers is the route search — both are
+   map-matching / position-tracking routines. **2026-10-09, same day, follow-up (`fw/04` §20):** the
+   same `+0x0A` search extended to all seven sibling RR modules, also zero hits everywhere — speed is
+   never read via literal-immediate `+0x0A` addressing anywhere in the RR firmware. The **turn-restriction
+   half is now found**: `sub_04e02c` (the sibling unpacker)'s own caller chain (`sub_04e56c`, reached
+   from a 5-function cluster distinct from `sub_01fd80`'s two callers) feeds a turn-feasibility gate
+   (`sub_04757c`/`sub_0476f4`) that checks, in order, junction-type compatibility between two decoded
+   edges, a now-decoded one-way field (`+0x15`: 0 = two-way, 1/2 = one-way per direction, 3 = closed),
+   and exact-match membership against the per-edge S10 forbidden-turn list (`sub_047990`). The
+   **cost-function half is still unfound**: no `mult`/`div` or running-total/priority-queue pattern
+   occurs anywhere in that gate or in `sub_04e56c` itself — these decide whether a transition is legal,
+   not how much it costs. Whether the numeric cost lives in a different RR module remains open. Not yet
+   cross-checked against real S10/`+0x15` disc data (firmware-code reading only so far). Still open.
 7. **Graph traversal**: callers of `sub_01fd80` / `sub_04e02c`, tile crossing via S6 twins,
-   level switching via S8.
+   level switching via S8. **2026-10-09 (`fw/04` §20.1-§20.2):** found a concrete candidate for the
+   tile-crossing mechanism — `sub_04e56c`, `sub_04e02c`'s sole in-module caller — which follows S4's
+   `+0x06`/`+0x08` next-segment links across tile boundaries via a block-resolution helper
+   (`sub_04ffb0`) and the DB descriptor table. Not yet confirmed to touch a documented S6 record, and
+   S8 level switching was not investigated this session. Still open.
 8. **Unknown fields the firmware reads**: `+0x10` bit 7 (**UAG, unattributed geometry**, 2026-10-01: firmware `rs_dump -u` + data placeholder class), `+0x18 & 0x10`
    (**tunnel flag**, chain record `+0x1B`, `fw/04` §7), `+0x1D` bits 4–6 (3-bit category: groups the segments of one complex junction in guidance, `gd_bjl` `sub_00a810`; also used by `rpmod` costs; `fw/04` §8–9), node `+6` flags (`fw/04` §12: bits 5-4 == 2 = edge node, `& 7` 4 and 5 alike, `& 7 == 2` = fork / merge node, `BIF_SYM_2` / `BIF_SYM_3` in guidance (§13), bit 3 unused; why some S6 nodes have bit 12 is open),
    S10 flags 2/3 (data: not dead ends, not restrictions; see `examples/06_osm_vs_disc_modugno/CHANGES.md`); `examples/07_firmware_emulator` runs the `dbq` descriptor builder in an emulator and maps every descriptor byte to its S4 input bits (`fw/04` §14; the `dbq` stream, `gd_bjl` items and junction passes, `fw/04` §17), the per-block-type table `gp[-0x7A30]`.
