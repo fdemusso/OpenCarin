@@ -181,7 +181,16 @@ TMC (location table). Not done: the 2015 OSM snapshot (Overpass attic did not an
 
 ### E. Housekeeping
 16. Refresh the graphify graph (`graphify update .`); it still points at the old `carin/parser/cf1.py`.
-17. `02-dbq-engine-mechanics.md`: handler addresses after `bsr.w` were lost to shell escaping; recover them from `dbq/dbd.asm`.
+17. ~~`02-dbq-engine-mechanics.md`: handler addresses after `bsr.w` were lost to shell escaping~~ Done
+    2026-10-09: recovered by extracting the real `dbd` module (file offset `0x60374`, size
+    `0x381e`) from `/CC93_/0560/nav_sw_load` inside `dataset/NAV_SW(v32).iso`
+    (`scripts/firmware/os9_modules.py`) and decompiling it in Ghidra — not by hand-reading
+    `dbq/dbd.asm`'s text, which renders the jump table as fake `ori.b` instructions and omits
+    the `×2` scale factor on the table-read instruction (a first pass within this session
+    mis-derived unscaled byte offsets and wrong command IDs from that text; Ghidra's decompiled
+    `switch` corrected it). Commands `$2033`/`$2034`/`$2035`/`$2036`/`$2037`/`$2038` →
+    `$c08`/`$c32`/`$b9e`/`$c64`/`$d0e`/`$cd0`, all six reachable, no gap. `$202d` confirmed as
+    shutdown (already known).
 
 ## Constraints / non-goals
 
