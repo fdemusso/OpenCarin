@@ -121,6 +121,18 @@ Every block is readable except one group:
    (**tunnel flag**, chain record `+0x1B`, `fw/04` §7), `+0x1D` bits 4–6 (3-bit category: groups the segments of one complex junction in guidance, `gd_bjl` `sub_00a810`; also used by `rpmod` costs; `fw/04` §8–9), node `+6` flags (`fw/04` §12: bits 5-4 == 2 = edge node, `& 7` 4 and 5 alike, `& 7 == 2` = fork / merge node, `BIF_SYM_2` / `BIF_SYM_3` in guidance (§13), bit 3 unused; why some S6 nodes have bit 12 is open),
    S10 flags 2/3 (data: not dead ends, not restrictions; see `examples/06_osm_vs_disc_modugno/CHANGES.md`); `examples/07_firmware_emulator` runs the `dbq` descriptor builder in an emulator and maps every descriptor byte to its S4 input bits (`fw/04` §14; the `dbq` stream, `gd_bjl` items and junction passes, `fw/04` §17), the per-block-type table `gp[-0x7A30]`.
 9. **Issue #6**: where `subrel` (LAYOUT `+2`) comes from; trace the RR `db_pub` setup.
+   Firmware side confirmed 2026-10-09 against the real `V_2_RR_0101_BMWC01S_app_sw_bsw2`
+   (`build/fw/`, Ghidra, `MIPS:BE:32:default`), independent of the CD-ID 20407 bytes still
+   awaited from the issue: `db_bh_read +0x23c0` (`0xa1cf8`) copies superblock `+0x22` into a
+   GP-relative global at `+0x16` and superblock `+0x1a` (DB-REL) into `+0x14` (`lh t1,0x22(s1)` /
+   `lh t1,0x1a(s1)`, each followed by `sh` through the GOT-relative pointer at `gp-0x7f34`);
+   `db_pub sub_002980` (`0x94148`) and `sub_002930` (`0x940f8`) are one-line accessors
+   returning that global's `+0x16` / `+0x14` (same `gp-0x7f24` pointer); the three sites
+   `db_pub +0x3978`/`+0x4198`/`+0x676c` (`0x95140`/`0x95960`/`0x97f34`) all do
+   `slti t0,v0,9` right after calling the `+0x16` accessor and pick 14 vs 16 bits via a
+   `bnel` branch-likely (v0<9 → 14, else → 16). Left open: the actual CD-ID 20407 superblock
+   bytes (data question, needs the contributor's reply), and whether `CarinVolume` should
+   read `subrel` straight from superblock `+0x22` instead of `calibrate()`.
 10. **RR vs Mk3 `db_pub`**: diff the CF=1 decoders (the listings in `docs/fw/` are Mk3).
     Done for `0x00` (§9.11.12) and `0x14`–`0x1E` (§9.11.11); `0x0E` and `0x29` remain.
 
