@@ -168,11 +168,12 @@ class CarinVolume:
     therefore probed (see `probe_sector_size`) unless `sector_size` is given.
     When `db_paths` is not given the layout is detected from the image.
 
-    `subrel` is the CF=1 sub-revision (see cf1.probe). The default keeps the
-    historical value 9; call calibrate() to detect it from the data.
+    `subrel` is the CF=1 sub-revision (see cf1.probe). Unless given it is read
+    from superblock +0x22, where the firmware reads it (db_bh_read, issue #6);
+    calibrate() detects it from the data and records whether the two agree.
     """
 
-    def __init__(self, image: IsoImage, db_paths=None, subrel: int = 9,
+    def __init__(self, image: IsoImage, db_paths=None, subrel: Optional[int] = None,
                  sector_size: Optional[int] = None):
         self.image = image
         if db_paths is None:
@@ -182,7 +183,8 @@ class CarinVolume:
         else:
             detected = CARIN_SECTOR
         self.sector_size = sector_size or detected
-        self.subrel = subrel
+        self._subrel = subrel
+        self.subrel_mismatch: Optional[bool] = None
         self.parts = [image.files[p] for p in db_paths]
         self.sectors = [f.size // self.sector_size for f in self.parts]
         self._layout: Optional[dict] = None
@@ -238,6 +240,21 @@ class CarinVolume:
             )
             self._db_rel = struct.unpack_from(">H", sb, 0x1A)[0]
         return self._layout
+
+    @property
+    def sb_subrel(self) -> int:
+        """Superblock +0x22: the CF=1 sub-revision (< 9: 14-bit fields, >= 9: 16-bit)."""
+        return struct.unpack_from(">H", self.read_sectors(0, 2), 0x22)[0]
+
+    @property
+    def subrel(self) -> int:
+        if self._subrel is None:
+            self._subrel = self.sb_subrel
+        return self._subrel
+
+    @subrel.setter
+    def subrel(self, value: int) -> None:
+        self._subrel = value
 
     @property
     def db_rel(self) -> int:
@@ -313,6 +330,8 @@ class CarinVolume:
         raws = [self.read_sectors(b.sector, b.length) for b in heads[::step][:sample]]
         self.subrel = detect_subrel(raws, self.layout, self.db_rel,
                                     self.sector_size, cf1.decode_block)
+        # the decoder only tells subrel < 9 from >= 9
+        self.subrel_mismatch = (self.subrel < 9) != (self.sb_subrel < 9)
         return self.subrel
 
 

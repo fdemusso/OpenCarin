@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from carin.parser.cf1.tile00 import Tile00
 from carin.parser.iso import CarinVolume, open_image
-from carin.parser.tmc import Location, decode_s12, parse_0x17, parse_0x18
+from carin.parser.tmc import RECORD_SIZE, Location, decode_s12, parse_0x17, parse_0x18
 
 LINKS = ("parent", "road", "prev", "next", "first", "last")
 EUROPE = (-35.0, 65.0, 20.0, 75.0)          # lon min, lon max, lat min, lat max; includes the Canaries
@@ -97,7 +97,8 @@ def main() -> int:
     print(f"blocks: 0x17 {len(p17)}, 0x18 {len(p18)}, 0x00 {len(tiles)}")
 
     # 1. chain and 0x18
-    parsed = {bid: parse_0x17(p) for bid, p in p17.items()}
+    size = vol.layout.get(0x46, RECORD_SIZE)
+    parsed = {bid: parse_0x17(p, size) for bid, p in p17.items()}
     heads = [b for b, (h, _) in parsed.items() if h.prev_block == 0]
     fail["0x17 chain heads != 1"] += len(heads) != 1
     order, cur = [], heads[0] if heads else 0

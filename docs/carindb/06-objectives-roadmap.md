@@ -155,8 +155,8 @@ Every block is readable except one group:
    read `subrel` straight from superblock `+0x22` instead of `calibrate()`.
    Data side, first point 2026-11-05 (daglitch, CD-ID 5944, DB-REL 26): `+0x22` = 8 and
    `calibrate()` picks subrel 8 (51/60 vs 5/60 name hits), so `+0x22` is the sub-revision and not an
-   offset (`04-cf1-codec.md`). Next: make `CarinVolume` read `+0x22` and keep `calibrate()` as a
-   cross-check; test on CD-IDs 2952 / 21594 and the 20407 bytes.
+   offset (`04-cf1-codec.md`). Done 2026-11-23: `CarinVolume.subrel` reads `+0x22`, `calibrate()` stays
+   as a cross-check (`subrel_mismatch`). Still to test on CD-IDs 2952 / 21594 and the 20407 bytes.
 10. **RR vs Mk3 `db_pub`**: diff the CF=1 decoders (the listings in `docs/fw/` are Mk3).
     Done for `0x00` (§9.11.12) and `0x14`–`0x1E` (§9.11.11); `0x0E` and `0x29` remain.
 

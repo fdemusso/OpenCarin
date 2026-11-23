@@ -1059,7 +1059,9 @@ on DB-REL 26, not 100**: block `0x2D6AB` has S0 `{0x1C, 170}` and its string are
 Santa Rosa, 38.4274° N 122.7690° W), and the five other coordinate pairs of DB-REL 34 are absent.
 `+0x28`..`+0x37` are not decoded (the last two u16 look like string pointers). Area names are US
 regions ("SAN FRANCISCO METRO", "CENTRAL CALIFORNIA"). The record size therefore depends on the
-DB-REL (`RECORD_SIZE_TABLE`), and `carin/parser/tmc.py` assumes 100.
+DB-REL (`RECORD_SIZE_TABLE[0x46]`); `carin/parser/tmc.py` now reads it from the superblock (100 if
+absent). The X of the location is `0x587D790F`, i.e. 237.23° in the `(lon + 30)` frame: American
+longitudes wrap past 180°, and the reader folds them back (here to 122.77° W).
 
 ```
 0x07 SECTION_1 (13 records of 20 B, one per TMC table)  ─► 0x18 (13 blocks) ─► 0x17 (920 / 1,076 blocks; 2007 CD: 14 / 1,164)

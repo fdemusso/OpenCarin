@@ -8,7 +8,9 @@ a 2007 CD (DB-REL 34): 189,973 records in 14 tables, 0 pointer or link failures
 A `0x17` payload (header included) is: the 8-byte block header, `+0x0C` u32 next and `+0x10` u32
 previous BLOCK_ID of the chain, `+0x14` u16 table id, `+0x16` / `+0x18` u16 first / last location
 code, a section descriptor `{u16 offset, u16 count}` at `+0x08`, then `count` records of 100 bytes
-and, after them, the NUL-terminated Latin-1 strings the records point to.
+and, after them, the NUL-terminated Latin-1 strings the records point to. The record is 56 bytes
+on DB-REL 26 (one location point at +0x20, issue #22) and 100 on DB-REL 34; it is read from
+RECORD_SIZE_TABLE[0x46] of the disc.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from typing import Dict, Iterator, List, NamedTuple, Optional, Tuple
 from .iso import to_wgs84
 
 RECORD_SIZE = 100
+RECORD_SIZE_INDEX = 0x46      # RECORD_SIZE_TABLE entry of the 0x17 record
 _POINT_OFFSETS = (0x20, 0x38, 0x44, 0x4C, 0x54, 0x5C)
 _KINDS = {0: "area", 1: "line"}
 
@@ -73,6 +76,13 @@ def decode_s12(entry: bytes) -> S12Ref:
     return S12Ref(direction, code, flags & 0x3FF, flags >> 10)
 
 
+def _wgs84(x: int, y: int) -> Tuple[float, float]:
+    """to_wgs84, with the longitude folded back into -180..180 (the Americas sit at 180..360 in
+    the disc frame: X 0x587D790F is 237.23, i.e. 122.77 W, on CD-ID 5944)."""
+    lon, lat = to_wgs84(x, y)
+    return (lon - 360.0 if lon > 180.0 else lon), lat
+
+
 def _string(payload: bytes, offset: int, lo: int) -> Optional[str]:
     if offset == 0:
         return None
@@ -82,20 +92,26 @@ def _string(payload: bytes, offset: int, lo: int) -> Optional[str]:
     return payload[offset:end].decode("latin-1")
 
 
-def parse_0x17(payload: bytes) -> Tuple[BlockHeader, List[Location]]:
-    """Decode one 0x17 block payload. Raises ValueError on a pointer that leaves the string area."""
+def parse_0x17(payload: bytes, record_size: int = RECORD_SIZE) -> Tuple[BlockHeader, List[Location]]:
+    """Decode one 0x17 block payload. Raises ValueError on a pointer that leaves the string area.
+
+    Points that lie beyond `record_size` (DB-REL 26 has only the one at +0x20) are None.
+    """
     nxt, prv, table, first, last = struct.unpack_from(">IIHHH", payload, 0x0C)
     off, cnt = struct.unpack_from(">HH", payload, 8)
-    end = off + RECORD_SIZE * cnt
+    end = off + record_size * cnt
     locs = []
     for i in range(cnt):
-        r = off + RECORD_SIZE * i
+        r = off + record_size * i
         code, bits = struct.unpack_from(">HB", payload, r)
         ptr = struct.unpack_from(">4H", payload, r + 0x06)
         pts = []
         for o in _POINT_OFFSETS:
+            if o + 8 > record_size:
+                pts.append(None)
+                continue
             x, y = struct.unpack_from(">II", payload, r + o)
-            pts.append(to_wgs84(x, y) if (x or y) else None)
+            pts.append(_wgs84(x, y) if (x or y) else None)
         locs.append(Location(
             table, code, _KINDS.get(bits, "point"), bits, payload[r + 5],
             _string(payload, ptr[0], end), _string(payload, ptr[1], end),
@@ -117,9 +133,10 @@ def parse_0x18(payload: bytes) -> Tuple[int, List[Tuple[int, int]]]:
 
 def iter_locations(vol) -> Iterator[Location]:
     """Every location record of a CarinVolume, in chain order of its 0x17 blocks."""
+    size = vol.layout.get(RECORD_SIZE_INDEX, RECORD_SIZE)
     for b in vol.walk():
         if b.type == 0x17:
-            yield from parse_0x17(vol.block(b.sector).payload)[1]
+            yield from parse_0x17(vol.block(b.sector).payload, size)[1]
 
 
 def read_locations(vol) -> Dict[Tuple[int, int], Location]:

@@ -126,3 +126,14 @@ def test_empty_file_defaults_to_the_cd_unit(tmp_path):
     f = tmp_path / "carindb"
     f.write_bytes(bytes(8192))
     assert CarinVolume(RawImage(str(f))).sector_size == 2048
+
+
+def test_subrel_is_read_from_superblock():
+    sb = bytearray(4096)
+    struct.pack_into(">H", sb, 0x22, 8)
+    vol = CarinVolume.__new__(CarinVolume)
+    vol._subrel = None
+    vol.read_sectors = lambda sector, count: bytes(sb)
+    assert vol.subrel == 8
+    vol.subrel = 16
+    assert vol.subrel == 16

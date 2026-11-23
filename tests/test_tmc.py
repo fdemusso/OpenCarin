@@ -8,15 +8,15 @@ from carin.parser.tmc import (RECORD_SIZE, decode_s12, parse_0x17, parse_0x18, s
                               table_id)
 
 
-def _block(records, table=0x11E, strings=b"\0A1\0Diemen\0A9\0", nxt=0, prv=0):
+def _block(records, table=0x11E, strings=b"\0A1\0Diemen\0A9\0", nxt=0, prv=0, size=RECORD_SIZE):
     """A 0x17 payload: header, descriptor, `records` (dicts) and the string blob."""
     off = 0x1C
-    end = off + RECORD_SIZE * len(records)
+    end = off + size * len(records)
     data = bytearray(end) + strings
     struct.pack_into(">HH", data, 8, off, len(records))
     struct.pack_into(">IIHHH", data, 0x0C, nxt, prv, table, records[0]["code"], records[-1]["code"])
     for i, rec in enumerate(records):
-        r = off + RECORD_SIZE * i
+        r = off + size * i
         struct.pack_into(">HB", data, r, rec["code"], rec.get("bits", 2))
         data[r + 5] = rec.get("b5", 0)
         for o, key in ((0x06, "num"), (0x08, "road"), (0x0A, "name"), (0x0C, "name2")):
@@ -158,3 +158,13 @@ def test_check_script_passes_a_consistent_disc_and_fails_a_broken_chain(monkeypa
     monkeypatch.setattr(_FakeVolume, "__init__", broken)
     assert chk.main() == 1
     assert "0x17 chain does not cover all blocks" in capsys.readouterr().out
+
+
+def test_db_rel_26_record_has_one_point():
+    payload = _block([{"code": 4098, "bits": 2, "num": 1, "name": 4, "pts": [(237.231, 38.4274)]}],
+                     size=56)
+    _, (loc,) = parse_0x17(payload, 56)
+    assert loc.name == "Diemen" and loc.points[1:] == (None,) * 5
+    lon, lat = loc.points[0]
+    assert abs(lon + 122.769) < 1e-4 and abs(lat - 38.4274) < 1e-4
+
