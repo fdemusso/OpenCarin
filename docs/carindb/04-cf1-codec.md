@@ -305,7 +305,7 @@ disc: CD-ID 5944 has `+0x22` = `0x0008` and `calibrate()` independently picks su
 issue #6); the DVDs 21708 / 21734 have `0x0060`, which is >= 9 (16 bits). The value is a version number,
 not an offset: read as an offset `0x0008` would point into the block header, and the `{offset, count}`
 pairs only start at `+0x24` (`{0x3C, 31}` on CD-ID 5944, `{0x68, 31}` on the DVDs). Still untested: a
-disc with `+0x22` < 9 and DB-REL 34 (CD-ID 21594, and CD-ID 20407 posted by lugovskovp as a screenshot).
+disc with `+0x22` < 9 and DB-REL 34 (CD-ID 21594). CD-ID 20407 (lugovskovp's screenshot) has `0x0060` like the DVDs, so it takes 16 bits and does not test the `< 9` branch (`09-known-discs.md`).
 
 The type `0x0E` decoder has a second sub-revision dependent width: the S2 `val1`
 field (a SECTION_4 byte offset in the linked `0x00` tile, stored `>> 1`) is
