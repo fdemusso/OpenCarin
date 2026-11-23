@@ -4,7 +4,7 @@
 [![Rust 2024](https://img.shields.io/badge/rust-2024-orange.svg)](carindb-rs/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Format: CARINdb](https://img.shields.io/badge/format-CARiN%20%2F%20CarinDB-orange.svg)](#)
-[![Tests: 81 passing](https://img.shields.io/badge/tests-81%20passing-brightgreen.svg)](tests/)
+[![Tests: 120 passing](https://img.shields.io/badge/tests-120%20passing-brightgreen.svg)](tests/)
 [![Buy Me A Coffee](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-yellow.svg)](https://buymeacoffee.com/fdemusso)
 
 **OpenCarin** is an open-source reverse-engineering and map compilation toolkit for the proprietary **Philips/VDO CARiN** navigation database format (`CARINdb`, `DB_0`, `DB_1`, `CARINET`).
@@ -58,7 +58,7 @@ We have achieved major breakthroughs across the entire format specification. Eve
   * A city's POI index written from scratch (`0x06`, `0x10`, `0x11`, `0x0C` sections 3 and 5): made-up POIs, with and without brands, are listed, found by name and routed to. See [`01-architecture.md`](docs/carindb/01-architecture.md) §4.4.2 and [`03-road-network.md`](docs/carindb/03-road-network.md) §6.7.
 * ✅ **TMC Traffic Message Channel Indices Decoded (`0x17`–`0x1B`)**:
   * TMC location tables (`0x17`), table index (`0x18`), TMC position records (`0x19`), and spherical coordinate spatial index (`0x1B` → `0x1A`).
-  * The 100-byte `0x17` location record (names, links, coordinates) and the road tiles' section 12 reference `(direction, code, flags & 0x3FF = table id)` are decoded on a 2007 CD (`carin/parser/tmc.py`, `scripts/routing/check_tmc_locations.py`); see [`01-architecture.md`](docs/carindb/01-architecture.md) §4.7.
+  * The `0x17` location record (names, links, coordinates; 100 bytes on DB-REL 34, 56 on DB-REL 26) and the road tiles' section 12 reference `(direction, code, flags & 0x3FF = table id)` are decoded on a 2007 CD (`carin/parser/tmc.py`, `scripts/routing/check_tmc_locations.py`); see [`01-architecture.md`](docs/carindb/01-architecture.md) §4.7.
 * ✅ **High-Performance Rust Toolchain (`carindb-rs`)**:
   * Fast native CLI tool with memory-mapped ISO access, ultra-fast CF=2 zlib and full CF=1 bit-packing decoders, supporting `dump-type`, `stats`, and disc-wide `xref` cross-referencing.
 
@@ -94,7 +94,6 @@ With the reading and decoding of the binary format solved, our focus is shifted 
 
 Before diving into code, consult the modular technical documentation:
 
-* 📖 **[docs/CARINDB_BLUEPRINT_EN.md](docs/CARINDB_BLUEPRINT_EN.md)**: The authoritative, comprehensive reference specification.
 * 📂 **[docs/carindb/](docs/carindb/README.md)**: Agent-oriented modular documentation:
   * [`01-architecture.md`](docs/carindb/01-architecture.md): Filesystem, superblock schema, system blocks, text encoding, TMC.
   * [`02-geo.md`](docs/carindb/02-geo.md): Coordinate system, quadtree, spatial index `0x07`–`0x09`, POI & background layers.
@@ -134,8 +133,7 @@ Before diving into code, consult the modular technical documentation:
 │   │   └── main.rs          # CLI entry point
 │   └── Cargo.toml
 ├── docs/
-│   ├── CARINDB_BLUEPRINT_EN.md  # Monolithic format blueprint
-│   ├── carindb/             # Modular documentation parts 0-8
+│   ├── carindb/             # Modular documentation parts 0-9
 │   └── fw/                  # Annotated firmware listings & provenance
 ├── scripts/
 │   ├── codec_cf1/           # Decoders and oracle validation scripts
@@ -249,7 +247,7 @@ Whether you have experience in:
 ...your help is warmly welcomed!
 
 1. Check out the issues tab or open a discussion on road routing semantics.
-2. Read [docs/carindb/06-objectives-roadmap.md](docs/carindb/06-objectives-roadmap.md) and [docs/CARINDB_BLUEPRINT_EN.md](docs/CARINDB_BLUEPRINT_EN.md).
+2. Read [docs/carindb/06-objectives-roadmap.md](docs/carindb/06-objectives-roadmap.md), then [docs/carindb/09-known-discs.md](docs/carindb/09-known-discs.md).
 3. Submit PRs for decoders, serializers, documentation improvements, or tests.
 
 ---

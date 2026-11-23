@@ -6,7 +6,7 @@
 > lookup via `find_parcel(vol, X, Y)` oracle 10/10 PASS. `0x0D`/`0x0F`/`0x11` = name
 > tries for letter-by-letter search (not spatial, §6.3.2). Type `0x00` field semantics are now KNOWN (map drawing). Types `0x01`–`0x03` are assumed identical.
 >
-> Source: `../CARINDB_BLUEPRINT_EN.md` §6. Related: CF=1 decoding for these types →
+> Related: CF=1 decoding for these types →
 > [`04-cf1-codec.md`](04-cf1-codec.md); open goals → [`06-objectives-roadmap.md`](06-objectives-roadmap.md).
 
 ---

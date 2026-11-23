@@ -8,7 +8,7 @@
 > For the exhaustive list of *falsified* codec hypotheses (do not re-attempt),
 > read [`05-failed-attempts.md`](05-failed-attempts.md) **before** trying anything here.
 >
-> Source: `../CARINDB_BLUEPRINT_EN.md` §9.11. Firmware listings: `docs/fw/`.
+
 > Implementation: `carin/parser/cf1/`.
 
 ---

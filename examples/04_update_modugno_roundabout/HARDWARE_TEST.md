@@ -17,7 +17,7 @@ and the coarse tile `0x5c58a51c`, plus every offset that points into them (315 `
 
 - **No DVD builder** (roadmap D15). The image would have to be burned as the DVD-ROM volume the unit expects. Which unit do you have, and
   with which medium: the original DVD navigation drive (RoadRunner) with a burned DVD, or an emulation of the drive? Please say before anything is built for it.
-- On the **CD platform** (CNI1) the route of `01-architecture.md` section 4.4.1 and `docs/CARINDB_BLUEPRINT_EN.md` (CD-i Bridge, raw burn) exists, but
+- On the **CD platform** (CNI1) the route of `01-architecture.md` section 4.4.1 and its CD-i Bridge / raw burn notes (top of the file) exists, but
   this disc is a DVD with a different database revision (DB-REL 34); a CD of this region would be a different build.
 
 ## Scenario, in order (stop at the first failure and say where)

@@ -5,7 +5,7 @@
 > block layout, the superblock/schema, system blocks, and text encoding.
 > Build freely on anything here.
 >
-> Source: `../CARINDB_BLUEPRINT_EN.md` §1–§5. Related: coordinates & records →
+> Related: coordinates & records →
 > [`02-geo.md`](02-geo.md); road-network parcels → [`03-road-network.md`](03-road-network.md).
 
 ---
@@ -1023,7 +1023,7 @@ fields marked ❓. S4 was tried against the quantifier counts, the text set numb
 zero after `0x202`): none fits.
 
 Cross-disc data point (Audi MMI Basic Plus CD, Benelux, DB-REL 34): the decode above is from that disc; the header
-is byte-for-byte identical to that of CD-ID 21594 (`../CARINDB_BLUEPRINT_EN.md` §4.5).
+is byte-for-byte identical to that of CD-ID 21594.
 
 ### 4.6 `0x0C` — Administrative Parcel (CF=2 zlib)
 

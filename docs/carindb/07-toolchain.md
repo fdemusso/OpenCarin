@@ -3,7 +3,7 @@
 > **Status: 🔧 REFERENCE.** The parser library and scripts that produced/verify
 > everything in these docs. Paths are relative to the repo root.
 >
-> Source: `../CARINDB_BLUEPRINT_EN.md` §10 + §9.11.8.
+
 
 ---
 
@@ -18,6 +18,8 @@
 | `carin/parser/spatial.py` | spatial index `0x07` → `0x08` → `0x09`: `tiles_at(vol, layer, lon, lat)`, `SpatialIndex`, parsers for the layer directory, grid and cell blocks — see [`02-geo.md`](02-geo.md) §7.3 (DB-REL 34 only) |
 | `carin/parser/geometry.py` | `road_segments(data, table)`: WGS84 road segments of a decoded `0x00` tile with name, locality, display class; `tile_frame`, `header_bounds` — see [`02-geo.md`](02-geo.md) §8.3 |
 | `carin/parser/house_numbers.py` | `segment_house_numbers(data)`: per-segment house numbers of a `0x04` block (two sides, scheme), `tile_block_id`, `run_envelope` = the `0x0E` S2 even/odd summary — see [`03-road-network.md`](03-road-network.md) §6.4 |
+| `carin/parser/tmc.py` | TMC locations: `parse_0x17(payload, record_size)` (100 B on DB-REL 34, 56 B on DB-REL 26, read from `RECORD_SIZE_TABLE[0x46]`), `parse_0x18`, `decode_s12` (section 12 triples), `read_locations(vol)`; American longitudes folded to -180..180 |
+| `carin/parser/carinet.py` | `CARINET` (own block space): `read_carinet`, `parse_events` (`0x64`), `parse_texts` (`0x65`), `Event.quantifier` / `.update_class` |
 
 | `carin/export/` | **routable export** of the street-level graph (`0x00`) and its layers: `tiles.parse_tile` (nodes, segments, S10 bans, S11 signposts, S13 marks of one decoded tile; coarse tiles with `level=`), `levels` (coarse segments and the street paths they are made of), `graph.build_graph` (joins tiles through the S6 twins, `components`), `cost.CostModel` (travel time: default speed for category 0, divisor per road type, junction delay), `router.Router` (edge-based Dijkstra with turn bans, for validation), `writers` (GeoPackage, CSV, OSM XML), `readers.read_gpkg` — see [`03-road-network.md`](03-road-network.md) §6.7. Stdlib only |
 
@@ -69,6 +71,8 @@
 | `check_04_house_numbers.py` | `0x04` layout (tile link, one 10-byte record per S4 segment, `f4` scheme) and `0x0E` S2 ranges vs the `0x04` envelope; 98.8% on 21708 (`03-road-network.md` §6.4) |
 | `layer_stats.py` | CF=1 vs CF=0/2 distributions of the scale layers (codes, records per section) |
 | `find_parcel.py` | **STEP 3** — `find_parcel(vol, X, Y) → sector`; builds/loads spatial index from S2 anchors (superseded in meaning: S2 anchors are linked `0x00` tile centres; the disc's own index is `0x07`–`0x09`, roadmap A3) |
+| `check_tmc_locations.py` | `0x17` chain, `0x18` index, pointers, links, prev/next symmetry; `--s12` checks the section 12 link and its geometry |
+| `check_carinet.py` | `CARINET` structure, per-set coverage; `--carindb` compares the `0x0A` `LANGUAGE` ids with the text sets |
 | `oracle_find_parcel.py` | STEP 3 oracle — 10/10 PASS 2026-09-19; samples blocks Albania→Austria |
 | `oracle_encode_0e.py` | **STEP 4** oracle — `encode_type0E` round-trip: raw→decode→encode→decode, compare `[4:]`; 10/10 PASS 2026-09-19 |
 

@@ -4,7 +4,7 @@
 > (0 free parameters, 2.0 km rms across 38 anchors, independently cross-checked).
 > POI (`0x06`, `0x10`) and feature (`0x16`) record layouts are byte-verified.
 >
-> Source: `../CARINDB_BLUEPRINT_EN.md` §7–§8. Related: block layout →
+> Related: block layout →
 > [`01-architecture.md`](01-architecture.md).
 
 ---

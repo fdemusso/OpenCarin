@@ -6,7 +6,7 @@
 > [`04-cf1-codec.md`](04-cf1-codec.md). **Read this file before proposing any new
 > codec attack.**
 >
-> Source: `../CARINDB_BLUEPRINT_EN.md` §9.1–§9.10.
+
 
 ---
 

@@ -1,9 +1,9 @@
 # CarinDB Blueprint — Agent Knowledge Base
 
 Reverse-engineering knowledge base for the **CarinDB** binary map format
-(BMW MK4 / CARiN navigation). Split from the monolithic
-[`../CARINDB_BLUEPRINT_EN.md`](../CARINDB_BLUEPRINT_EN.md) into task-scoped parts
-so an AI agent can load only the part relevant to its current task.
+(BMW MK4 / CARiN navigation), in task-scoped parts so a reader (or an AI agent) can load
+only the part relevant to the task. This is the only copy of the documentation: the old
+monolithic blueprint was removed on 2026-11-23.
 
 > **Analyzed media**: `dataset/NAV_DB_21708.ISO` — BMW MK4 / CARiN, CD-ID 21708,
 > compile date 2015-08-04. All multi-byte values are **Big-Endian**.
@@ -46,6 +46,8 @@ pointers. Coordinates are a linear (non-Mercator) lon/lat grid, **RESOLVED**.
 30% of blocks use `COMPRESSION_FLAG=1`, which is **not compression** but
 structure-driven bit-packing; its decoder was recovered from the navigation-unit
 firmware and is **RESOLVED for `0x00`, `0x0E`, `0x14`–`0x16` and `0x1C`–`0x1E`** (parts 4 & 5).
+The CF=1 sub-revision is superblock `+0x22`. Discs span DB-REL 22, 26 and 34, on DVD and CD,
+with different unit sizes and record sizes; they are listed in [`09-known-discs.md`](09-known-discs.md).
 Firmware evidence comes from two BMW platforms — the CC-93 (m68k, CD) and the
 RoadRunner (MIPS, DVD) that reads these discs; see [`../fw/03-firmware-provenance.md`](../fw/03-firmware-provenance.md).
 

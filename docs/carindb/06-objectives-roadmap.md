@@ -1,7 +1,7 @@
 # Part 6 — Objectives, Status & Roadmap
 
-> **Status: 🎯 OPEN — rewritten 2026-09-28** after merging the community findings
-> (PRs #3–#12) and the first pass over the RoadRunner firmware. This is the worklist:
+> **Status: 🎯 OPEN — rewritten 2026-09-28, brought up to date 2026-11-23** after merging the
+> community findings (PRs #3–#44, issues #1–#26) and the first pass over the RoadRunner firmware. This is the worklist:
 > what is known, what is not, and what "done" means for each open item.
 
 ---
@@ -13,8 +13,9 @@
    road network with geometry, names, house numbers, POIs and background layers.
 2. **Write** it: compile OpenStreetMap data into a disc the original units accept.
 
-Discs used for evidence: DVD 21708 and 21734 (DB-REL 34, in `dataset/`); CD 21594
-(DB-REL 34) and CD 2952 (DB-REL 22), tested by a contributor. Firmware: see
+Discs used for evidence: DVD 21708 and 21734 (DB-REL 34, in `dataset/`); contributors added
+CDs 2952 (DB-REL 22), 21594 and a 2007 BeNeLux CD (DB-REL 34), and a North America CD 5944
+(DB-REL 26). All are listed in [`09-known-discs.md`](09-known-discs.md). Firmware: see
 [`../fw/03-firmware-provenance.md`](../fw/03-firmware-provenance.md).
 
 ## Evidence rules

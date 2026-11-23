@@ -3,7 +3,7 @@
 Reads the navigation image directly (no mount required) and exposes the
 CARINdb block address space that spans DB_0 + DB_1.
 
-Reference: docs/CARINDB_BLUEPRINT.md sections 1 and 2.
+Reference: docs/carindb/01-architecture.md.
 """
 
 from __future__ import annotations
@@ -336,7 +336,7 @@ class CarinVolume:
 
 
 # --------------------------------------------------------------------------
-# Geographic frame (docs/CARINDB_BLUEPRINT.md section 7)
+# Geographic frame (docs/carindb/02-geo.md)
 # A full 360 deg turn is 2_000_000_000 CARIN units; the origin sits on the
 # equator at 30 deg West.  Calibrated against 38 city labels, rms 2.0 km.
 # --------------------------------------------------------------------------
