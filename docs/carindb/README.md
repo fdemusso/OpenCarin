@@ -33,6 +33,8 @@ Load order for a cold agent: start here, then jump to the part matching your tas
 | 5 | [`05-failed-attempts.md`](05-failed-attempts.md) | Every codec hypothesis that was falsified | ⛔ NEGATIVE KNOWLEDGE |
 | 6 | [`06-objectives-roadmap.md`](06-objectives-roadmap.md) | Status per block type, corrected conclusions, prioritized roadmap | 🎯 OPEN (rewritten 2026-09-28) |
 | 7 | [`07-toolchain.md`](07-toolchain.md) | Parser library + scripts reference | 🔧 REFERENCE |
+| 8 | [`08-qgis-vdo-handoff.md`](08-qgis-vdo-handoff.md) | Notes for QGIS_VDO (Italian) | 🔧 REFERENCE |
+| 9 | [`09-known-discs.md`](09-known-discs.md) | Every disc the findings rest on: CD-ID, DB-REL, unit, contributor, superblock dumps | 🔧 REFERENCE |
 
 ## One-paragraph orientation
 

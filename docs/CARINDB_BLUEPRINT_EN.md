@@ -6,6 +6,12 @@
 > part instead of the whole file when working on a specific task. This document
 > remains the authoritative single source.
 
+> **Superseded in places (2026-11-23).** The split parts are kept current and this monolith is not:
+> since it was written the CD discs, `CARINET`, the TMC tables (`0x17`/`0x18` exist on CDs and
+> section 12 is populated on the 2007 CD), DB-REL 26 and the sub-revision source (superblock
+> `+0x22`) were documented only in `docs/carindb/`. Where the two disagree, `docs/carindb/` wins;
+> in particular "DVD only" for section 12 and for `0x17`/`0x19` below is wrong.
+
 > Analyzed media: `dataset/NAV_DB_21708.ISO` — BMW MK4 / CARiN, CD-ID 21708, compile date 2015-08-04.
 > All values are **Big-Endian**. Every statement in this document has been verified
 > against the dump; what has not been verified is marked `UNKNOWN` / `RESERVED`.
