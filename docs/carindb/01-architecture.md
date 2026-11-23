@@ -551,6 +551,13 @@ are not a hash of the text (MD5, SHA-1, SHA-256 and CRC32 tried). There is no bu
 records; the date is only in the text (`conversion date: 20070726-1557`). The record sizes are
 not stored; they follow from the offsets.
 
+**DB-REL 26** (daglitch, issue #19; CD-ID 5944, Navtech North America 2002, 2048-byte unit): the
+block is at **sector 1** (`BLOCK_ID 0x00000101`) and **CF = 0** (plain, not zlib). Same
+descriptors; section 0 = `1, 26, 0x38, 9, 0x41, 15`, so that field tracks DB-REL; section 1 ends
+`1, 1, 26, 0x50, 0x1E1 (481), 0`. The 16 bytes are the same 111,111,111 × 1..4, so the constant goes
+back to DB-REL 26 / 2002. The text (481 bytes) includes `conditional access: false`,
+`gdf version 3.0` and `rds/tmc included`.
+
 Start of the build-info text on DVD 21708:
 
 ```
@@ -628,7 +635,9 @@ letter. `offset`/`count` index SECTION_0 of the referenced `0x0A` block (stride 
 The last u16 is 0 in every record of `0x0B`, `0x0D`, `0x0F` and `0x11` on CD-IDs 2952 and 21594
 (electricduck, issue #18; e.g. 288,896 / 288,896 `0x0F` records on CD-ID 2952) and on DVDs 21708
 and 21734 (all records of the first 400 blocks of each type, 2026-10-07): alignment padding
-(lugovskovp, issue #18).
+(lugovskovp, issue #18). A third disc and DB-REL agree (daglitch, CD-ID 5944, DB-REL 26, North
+America): `0x0B` at sector 3 has 3 records (`e`, `u`, `v`), all with leaf = 1 and last u16 = 0,
+pointing at the country name list ("estados unidos" … "united states" …).
 
 **Rule for the target block** (lugovskovp, issue #18): `leaf` = 1 → `BLOCK_ID` is a block of the
 type one below the index (`0x0B` → `0x0A`, `0x0D` → `0x0C`, `0x0F` → `0x0E`, `0x11` → `0x10`);
@@ -671,7 +680,8 @@ The `0x0B` block indexes S0 by initial letter (§4.3).
  0x04   2                 offset in that block       it is this BLOCK_ID, offset and count)
  0x06   2                 count: the root of the country's city-name trie (see below), one
                           entry per initial letter
- 0x08  16   four u32: 11, 22, 33, 44 on DB-REL 34; 111,111,111 × 1..4 on CD-ID 2952
+ 0x08  16   four u32: 11, 22, 33, 44 on DB-REL 34 and on DB-REL 26 (CD-ID 5944);
+            111,111,111 × 1..4 on CD-ID 2952
             (0 on `europe`). A placeholder or format signature, not country data. The 0x13
             block has a similar 16 bytes, but there they are 111,111,111 × 1..4 also on the
             DB-REL 34 DVDs (§4.1)
@@ -679,13 +689,21 @@ The `0x0B` block indexes S0 by initial letter (§4.3).
  0x1A   2   S3_COUNT
  0x1C   8   4 × u16: 500, 300, 1000, 500 for every country on every disc, 0 for `europe`.
             The firmware multiplies each by 100 (as it does segment lengths); what they
-            mean is not known. Upstream's "default speeds in 0.1 km/h" is unconfirmed
+            mean is not known. Upstream's "default speeds in 0.1 km/h" is unconfirmed, and
+            looks wrong: the same four values stand for the United States (miles, CD-ID 5944,
+            daglitch, issue #25) and for the UK (mph) as for Poland or Germany, while real limits
+            differ per country (lugovskovp, issue #1: 30 / 60 / 70 mph = 48 / 96 / 112 km/h in
+            the UK against 50 / 90 / 120 elsewhere). Probably a constant of the converter
  0x24   2   LEFT_HAND     1 only for Ireland and the United Kingdom (England, Scotland, Wales
                           on CD-ID 2952). Gibraltar, which drives on the right, has 0
  0x26   2   UNKNOWN       1 for be, cz, de, gi, li, lu, me, nl, at, ch, sk, rs; else 0
  0x28   2   COUNTRY_ID    the country's position in the English-name order of ISO 3166
                           (al 0x02, ad 0x05, at 0x0E, … gb 0xDF, va 0xE5), with Serbia (0xF5)
-                          and Montenegro (0xF6) appended at the end
+                          and Montenegro (0xF6) appended at the end. The United States is 0xE0 on
+                          the DB-REL 26 Navtech disc (daglitch, issue #26), next to gb 0xDF in the
+                          same order. lugovskovp's hypothesis (issue #26, unverified): the codes
+                          are the UN country list of the year the disc was made, so they may differ
+                          between DB-REL versions
  0x2A   2   FLAGS2        4 on most countries without S3 entries (eastern Europe, the Nordics),
                           2 on `europe`, else 0
  --- DB-REL 34 only ---
@@ -697,6 +715,11 @@ The `0x0B` block indexes S0 by initial letter (§4.3).
  0x32   2   REGION        "eu" on the DVDs, "--" on CD-ID 21594
  0x34   4   0
 ```
+
+**DB-REL 26** (daglitch, issues #25 and #26; CD-ID 5944, Navtech North America 2002): the record
+is 44 bytes like DB-REL 22 (no `COVERAGE`, `ISO_CC`, `REGION`); the one country, the United States,
+has `+0x1C` = 500, 300, 1000, 500, `LEFT_HAND` = 0 (consistent with both readings of that field,
+so it does not settle left-hand traffic against island state, issue #25) and `COUNTRY_ID` = 0x00E0.
 
 **Firmware.** Mk3 0127 reads the record in two places with identical code, `rpmod+0x46ff0` (the
 route planner, behind an RPC stub) and `dbq+0x213f0` (database queries). Both find the record
@@ -1024,6 +1047,19 @@ evidence is the disc data, the linked `0x00` geometry and a published TMC table 
 1,164 `0x17` blocks and 14 `0x18` blocks (all CF=2, 189,973 location records) but no `0x19`,
 `0x1A` or `0x1B`. The 100-byte `0x17` record below was decoded from it, with names and
 coordinates (`carin/parser/tmc.py`, `scripts/routing/check_tmc_locations.py`, 2026-10-09).
+
+**DB-REL 26 (North America 2002, CD-ID 5944; daglitch, issues #17 and #22).** 20 `0x17` and 3
+`0x18` blocks, again no `0x19` / `0x1A` / `0x1B`. The tables are `0x051`, `0x061`, `0x191`: CC 1
+(USA) with LTN 5, 6 and 25. The `0x18` S0 and the 20-byte `0x07` SECTION_1 records have the layout
+below; `+0x0A` is `0x0100` here too and `COUNTRY_ID` is `0x00E0`. **The `0x17` record is 56 bytes
+on DB-REL 26, not 100**: block `0x2D6AB` has S0 `{0x1C, 170}` and its string area starts at
+`0x1C + 56 × 170 = 0x254C`, the smallest name pointer. Up to `+0x24` the field order is the
+100-byte one (code, type at `+0x02`, pointers at `+0x06`..`+0x0C`, road code `+0x10`, next point
+`+0x14`); the single location point is at `+0x20` / `+0x24` (X, Y; code 4098 = CA-12 at Wright Rd,
+Santa Rosa, 38.4274° N 122.7690° W), and the five other coordinate pairs of DB-REL 34 are absent.
+`+0x28`..`+0x37` are not decoded (the last two u16 look like string pointers). Area names are US
+regions ("SAN FRANCISCO METRO", "CENTRAL CALIFORNIA"). The record size therefore depends on the
+DB-REL (`RECORD_SIZE_TABLE`), and `carin/parser/tmc.py` assumes 100.
 
 ```
 0x07 SECTION_1 (13 records of 20 B, one per TMC table)  ─► 0x18 (13 blocks) ─► 0x17 (920 / 1,076 blocks; 2007 CD: 14 / 1,164)

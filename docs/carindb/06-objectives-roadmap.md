@@ -70,7 +70,7 @@ Every block is readable except one group:
 | `0x0E` S2 `+8..+14` are coordinate deltas (`decode_s2_coords`) | even/odd house-number ranges | PR #10 |
 | `0x00` S4 is a BSP tree, `+0x06`/`+0x08` children | next segment at start / end node | PR #12 |
 | `can_traverse` always returns 1; `rpmod` never reads `0x00` records | rejects class 6 and junction 3/4 unless high nibble 4; reads S4 records | PR #12, RR `sub_01fd80` |
-| `subrel >= 9` follows from DB-REL 34 | per disc (CD 21594 needs 8) | PR #4, issue #6 |
+| `subrel >= 9` follows from DB-REL 34 | per disc (CD 21594 needs 8; superblock `+0x22` = 8 on CD-ID 5944, DB-REL 26) | PR #4, issue #6 |
 | 98,304 tile grid is universal | follows from the `0x07` root square; DVD-specific value | PR #11 |
 | On the DVDs all tile edges are multiples of 98,304 from `(0, 0)` | no tile corner is (0 of 128,690 / 147,272); tile sides are root / `2^k`, k = 4…16, down to 24,576; 2,837 / 3,887 tiles have a side not a multiple of 98,304 | `check_spatial_index.py`, issue #20 |
 | `find_parcel` indexes `0x0E` by S2 anchors | S2 `+0/+4` are the centres of linked `0x00` tiles; the real spatial index is `0x07`–`0x09` | PR #10, #11 |
@@ -153,6 +153,10 @@ Every block is readable except one group:
    `bnel` branch-likely (v0<9 → 14, else → 16). Left open: the actual CD-ID 20407 superblock
    bytes (data question, needs the contributor's reply), and whether `CarinVolume` should
    read `subrel` straight from superblock `+0x22` instead of `calibrate()`.
+   Data side, first point 2026-11-05 (daglitch, CD-ID 5944, DB-REL 26): `+0x22` = 8 and
+   `calibrate()` picks subrel 8 (51/60 vs 5/60 name hits), so `+0x22` is the sub-revision and not an
+   offset (`04-cf1-codec.md`). Next: make `CarinVolume` read `+0x22` and keep `calibrate()` as a
+   cross-check; test on CD-IDs 2952 / 21594 and the 20407 bytes.
 10. **RR vs Mk3 `db_pub`**: diff the CF=1 decoders (the listings in `docs/fw/` are Mk3).
     Done for `0x00` (§9.11.12) and `0x14`–`0x1E` (§9.11.11); `0x0E` and `0x29` remain.
 

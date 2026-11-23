@@ -296,8 +296,16 @@ text is decoded last, so the name check separates them:
 |---|---|---|---|
 | CD-ID 2952 (DB-REL 22) | 1.00 | 0.04 | 14 bits (subrel 8) |
 | CD-ID 21594 (DB-REL 34) | 1.00 | 0.19 | 14 bits (subrel 8) |
+| CD-ID 5944 (DB-REL 26, Navtech NA) | 51/60 blocks with street words | 5/60 | 14 bits (subrel 8) |
 | CD-ID 21708 (DB-REL 34) | 0.02 | 1.00 | 16 bits (subrel 9) |
 | CD-ID 21734 (DB-REL 34) | 0.00 | 1.00 | 16 bits (subrel 9) |
+
+Superblock `+0x22` is that sub-revision (RR `db_bh_read`, roadmap item 9). The first data point from a
+disc: CD-ID 5944 has `+0x22` = `0x0008` and `calibrate()` independently picks subrel 8 (daglitch,
+issue #6); the DVDs 21708 / 21734 have `0x0060`, which is >= 9 (16 bits). The value is a version number,
+not an offset: read as an offset `0x0008` would point into the block header, and the `{offset, count}`
+pairs only start at `+0x24` (`{0x3C, 31}` on CD-ID 5944, `{0x68, 31}` on the DVDs). Still untested: a
+disc with `+0x22` < 9 and DB-REL 34 (CD-ID 21594, and CD-ID 20407 posted by lugovskovp as a screenshot).
 
 The type `0x0E` decoder has a second sub-revision dependent width: the S2 `val1`
 field (a SECTION_4 byte offset in the linked `0x00` tile, stored `>> 1`) is
