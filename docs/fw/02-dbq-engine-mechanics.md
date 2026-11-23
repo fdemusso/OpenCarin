@@ -74,15 +74,51 @@ Once initialized, the daemon enters a loop (001022) waiting for signals (via $15
 
 ### Command Dispatch Table (dbd.asm)
 
-The dispatch table receives a command ID in d0. We identified the following mappings based on the relative offsets in the table:
+Verified 2026-10-09 against the real `dbd` module — extracted from
+`/CC93_/0560/nav_sw_load` inside `dataset/NAV_SW(v32).iso` with
+`scripts/firmware/os9_modules.py` (module `dbd`, file offset `0x60374`, size
+`0x381e`; its bytes match `dbq/dbd.asm`'s text byte-for-byte at every address
+checked) — then loaded into Ghidra and decompiled, rather than hand-computed
+from the disassembler's text. That text renders the jump-table words as fake
+`ori.b` instructions and, critically, prints the table-read instruction
+without its scale factor (`move.w $1066(pc,d0.w),d0`), which previously led
+to an unscaled (×1) byte-offset reading. Ghidra's decompiler shows the real
+instruction is `move.w (0x1066,PC,D0w*0x2), D0w` — the table is **word-indexed
+(×2)**, not byte-indexed — and resolves the whole dispatcher to a clean,
+self-consistent C `switch`:
 
-* **$202d** (offset 0x00): **Shutdown / Terminate Server** (Jumps to 001018, sets flag $5(a7)).
-* **$2039** (offset 0x0C): Unknown (bsr.w ).
-* **$203b** (offset 0x0E): Unknown (bsr.w ).
-* **$203d** (offset 0x10): **Search Query** (bsr.w ).
-* **$203f** (offset 0x12): **Retrieve / Open** (bsr.w ).
-* **$2041** (offset 0x14): **Access by ID** (bsr.w ).
-* **$2043** (offset 0x16): Unknown (bsr.w ).
+```c
+d0 = command_id - 0x202d;
+if ((unsigned)d0 > 0x15) goto exit;      // 00104e-0105c
+switch (command_id) {
+case 0x202d: shutdown();        break;   // 001018 (sets flag $5(a7))
+case 0x2033: FUN_00000c08();    break;   // case block 00102a
+case 0x2034: FUN_00000c32();    break;   // case block 001030
+case 0x2035: FUN_00000b9e();    break;   // case block 00103c
+case 0x2036: FUN_00000c64();    break;   // case block 001036
+case 0x2037: FUN_00000d0e();    break;   // case block 001042
+case 0x2038: FUN_00000cd0();    break;   // case block 001048
+}
+```
+
+* **$202d**: **Shutdown / Terminate Server** (jumps to `001018`, sets flag `$5(a7)`).
+* **$2033**: Unknown (`bsr.w $c08`, case block at `00102a`).
+* **$2034**: Unknown (`bsr.w $c32`, case block at `001030`).
+* **$2035**: **Search Query** (`bsr.w $b9e`, case block at `00103c`).
+* **$2036**: **Retrieve / Open** (`bsr.w $c64`, case block at `001036`).
+* **$2037**: **Access by ID** (`bsr.w $d0e`, case block at `001042`).
+* **$2038**: Unknown (`bsr.w $cd0`, case block at `001048`).
+
+All six are reachable — there is no off-by-one gap. Command IDs `$202e`–`$2032`
+and `$2039`–`$2042` are in bound (`d0` 1–5 and 12–21) but hit a `$002c` table
+slot, i.e. jump straight to the shared exit at `001092` as no-ops; `$2043`
+and above are rejected by the bound check before the table is even read.
+
+*(This supersedes an earlier pass in this same session that read the command
+IDs as `$2039`/`$203b`/`$203d`/`$203f`/`$2041`/`$2043`, spaced by 2 — an
+artifact of the missing ×2 scale factor. The semantic labels — Search Query /
+Retrieve-Open / Access-by-ID — are unchanged, since they were assigned by
+position in the sequence, not by the literal command value.)*
 
 *(Note: The previous assumption that $202d was the search query is false. $202d instructs the daemon to safely shut down. The search query is $203d)*.
 
